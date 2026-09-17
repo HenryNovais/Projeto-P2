@@ -18,7 +18,6 @@ public class Facade {
     }
 
     public void encerrarSistema() {
-        // Fechamento e persistência de dados
     }
 
     // --- US 1: Criação de Empregados ---
@@ -65,5 +64,26 @@ public class Facade {
         }
         
         throw new Exception("Atributo nao existe.");
+    }
+
+    // --- US 2: Remoção e Busca ---
+    public void removerEmpregado(String empId) throws Exception {
+        if (!empregados.containsKey(empId)) {
+            throw new Exception("Empregado nao existe.");
+        }
+        empregados.remove(empId);
+    }
+
+    public String getEmpregadoPorNome(String nome, int indice) throws Exception {
+        int currentIndex = 1;
+        for (Empregado emp : empregados.values()) {
+            if (emp.getNome().equals(nome)) {
+                if (currentIndex == indice) {
+                    return emp.getId();
+                }
+                currentIndex++;
+            }
+        }
+        throw new Exception("Empregado nao existe.");
     }
 }
