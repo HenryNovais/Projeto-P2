@@ -3,6 +3,8 @@ package controllers;
 import models.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 
 public class Facade {
     private Map<String, Empregado> empregados;
@@ -19,10 +21,24 @@ public class Facade {
 
     public void encerrarSistema() { }
 
-    // --- MÉTODOS AUXILIARES DE VALIDAÇÃO E FORMATAÇÃO ---
+    // --- MÉTODOS AUXILIARES ---
     private String formatarValor(String valor) {
         double num = Double.parseDouble(valor.replace(",", "."));
         return String.format(java.util.Locale.US, "%.2f", num).replace(".", ",");
+    }
+
+    private String formatarHoras(double horas) {
+        // Se a hora for exata (ex: 8.0), retorna "8". Se for quebrada, retorna com virgula.
+        if (horas == (long) horas) return String.valueOf((long) horas);
+        return String.valueOf(horas).replace(".", ",");
+    }
+
+    private boolean isDataNoIntervalo(String dataAlvo, String dataInicial, String dataFinal) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        LocalDate alvo = LocalDate.parse(dataAlvo, formatter);
+        LocalDate inicial = LocalDate.parse(dataInicial, formatter);
+        LocalDate fInal = LocalDate.parse(dataFinal, formatter);
+        return !alvo.isBefore(inicial) && !alvo.isAfter(fInal);
     }
 
     private void validarDadosIniciais(String nome, String endereco) throws Exception {
@@ -116,5 +132,69 @@ public class Facade {
             }
         }
         throw new Exception("Empregado nao existe.");
+    }
+
+    // --- US 3: Cartão de Ponto ---
+    public void lancaCartao(String empId, String data, String horas) throws Exception {
+        if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
+        Empregado emp = empregados.get(empId);
+        if (!(emp instanceof EmpregadoHorista)) throw new Exception("Empregado nao eh horista.");
+        
+        double horasVal = Double.parseDouble(horas.replace(",", "."));
+        ((EmpregadoHorista) emp).addCartao(new CartaoDePonto(data, horasVal));
+    }
+
+    public String getHorasTrabalhadas(String empId, String dataInicial, String dataFinal) throws Exception {
+        if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
+        Empregado emp = empregados.get(empId);
+        if (!(emp instanceof EmpregadoHorista)) throw new Exception("Empregado nao eh horista.");
+        
+        double normais = 0;
+        for (CartaoDePonto cartao : ((EmpregadoHorista) emp).getCartoes()) {
+            if (isDataNoIntervalo(cartao.getData(), dataInicial, dataFinal)) {
+                double h = cartao.getHoras();
+                normais += (h > 8) ? 8 : h;
+            }
+        }
+        return formatarHoras(normais);
+    }
+
+    public String getHorasExtrasTrabalhadas(String empId, String dataInicial, String dataFinal) throws Exception {
+        if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
+        Empregado emp = empregados.get(empId);
+        if (!(emp instanceof EmpregadoHorista)) throw new Exception("Empregado nao eh horista.");
+        
+        double extras = 0;
+        for (CartaoDePonto cartao : ((EmpregadoHorista) emp).getCartoes()) {
+            if (isDataNoIntervalo(cartao.getData(), dataInicial, dataFinal)) {
+                double h = cartao.getHoras();
+                if (h > 8) extras += (h - 8);
+            }
+        }
+        return formatarHoras(extras);
+    }
+
+    // --- US 4: Vendas ---
+    public void lancaVenda(String empId, String data, String valor) throws Exception {
+        if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
+        Empregado emp = empregados.get(empId);
+        if (!(emp instanceof EmpregadoComissionado)) throw new Exception("Empregado nao eh comissionado.");
+        
+        double valorVal = Double.parseDouble(valor.replace(",", "."));
+        ((EmpregadoComissionado) emp).addVenda(new ResultadoVenda(data, valorVal));
+    }
+
+    public String getVendasRealizadas(String empId, String dataInicial, String dataFinal) throws Exception {
+        if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
+        Empregado emp = empregados.get(empId);
+        if (!(emp instanceof EmpregadoComissionado)) throw new Exception("Empregado nao eh comissionado.");
+        
+        double total = 0;
+        for (ResultadoVenda venda : ((EmpregadoComissionado) emp).getVendas()) {
+            if (isDataNoIntervalo(venda.getData(), dataInicial, dataFinal)) {
+                total += venda.getValor();
+            }
+        }
+        return formatarValor(String.valueOf(total));
     }
 }
