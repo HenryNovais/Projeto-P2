@@ -46,7 +46,6 @@ public class Facade {
         }
     }
 
-    // Leitor de datas manual para burlar os zeros esquecidos e validar dias inexistentes (ex: 30/02)
     private LocalDate parseData(String dataStr, String erroMsg) throws Exception {
         try {
             String[] partes = dataStr.split("/");
@@ -54,7 +53,7 @@ public class Facade {
             int dia = Integer.parseInt(partes[0]);
             int mes = Integer.parseInt(partes[1]);
             int ano = Integer.parseInt(partes[2]);
-            return LocalDate.of(ano, mes, dia); 
+            return LocalDate.of(ano, mes, dia);
         } catch (Exception e) {
             throw new Exception(erroMsg);
         }
@@ -63,7 +62,8 @@ public class Facade {
     private boolean isDataNoIntervalo(String dataAlvo, LocalDate inicial, LocalDate fFinal) {
         try {
             LocalDate alvo = parseData(dataAlvo, "Erro");
-            return !alvo.isBefore(inicial) && !alvo.isAfter(fFinal);
+            // CORREÇÃO: alvo agora é ESTRITAMENTE MENOR que a data final (exclusiva)
+            return !alvo.isBefore(inicial) && alvo.isBefore(fFinal);
         } catch(Exception e) {
             return false;
         }
@@ -154,7 +154,7 @@ public class Facade {
         Empregado emp = empregados.get(empId);
         if (!(emp instanceof EmpregadoHorista)) throw new Exception("Empregado nao eh horista.");
         
-        parseData(data, "Data invalida."); // Apenas valida se a data explode
+        parseData(data, "Data invalida.");
         
         double horasVal = Double.parseDouble(horas.replace(",", "."));
         if (horasVal <= 0) throw new Exception("Horas devem ser positivas.");
