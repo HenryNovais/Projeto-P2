@@ -4,7 +4,6 @@ import models.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 
 public class Facade {
     private Map<String, Empregado> empregados;
@@ -21,24 +20,15 @@ public class Facade {
 
     public void encerrarSistema() { }
 
-    // --- MÉTODOS AUXILIARES ---
+    // --- MÉTODOS AUXILIARES E VALIDAÇÕES ---
     private String formatarValor(String valor) {
         double num = Double.parseDouble(valor.replace(",", "."));
         return String.format(java.util.Locale.US, "%.2f", num).replace(".", ",");
     }
 
     private String formatarHoras(double horas) {
-        // Se a hora for exata (ex: 8.0), retorna "8". Se for quebrada, retorna com virgula.
         if (horas == (long) horas) return String.valueOf((long) horas);
         return String.valueOf(horas).replace(".", ",");
-    }
-
-    private boolean isDataNoIntervalo(String dataAlvo, String dataInicial, String dataFinal) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        LocalDate alvo = LocalDate.parse(dataAlvo, formatter);
-        LocalDate inicial = LocalDate.parse(dataInicial, formatter);
-        LocalDate fInal = LocalDate.parse(dataFinal, formatter);
-        return !alvo.isBefore(inicial) && !alvo.isAfter(fInal);
     }
 
     private void validarDadosIniciais(String nome, String endereco) throws Exception {
@@ -53,6 +43,29 @@ public class Facade {
             if (sal < 0) throw new Exception("Salario deve ser nao-negativo.");
         } catch (NumberFormatException e) {
             throw new Exception("Salario deve ser numerico.");
+        }
+    }
+
+    // Leitor de datas manual para burlar os zeros esquecidos e validar dias inexistentes (ex: 30/02)
+    private LocalDate parseData(String dataStr, String erroMsg) throws Exception {
+        try {
+            String[] partes = dataStr.split("/");
+            if (partes.length != 3) throw new Exception();
+            int dia = Integer.parseInt(partes[0]);
+            int mes = Integer.parseInt(partes[1]);
+            int ano = Integer.parseInt(partes[2]);
+            return LocalDate.of(ano, mes, dia); 
+        } catch (Exception e) {
+            throw new Exception(erroMsg);
+        }
+    }
+
+    private boolean isDataNoIntervalo(String dataAlvo, LocalDate inicial, LocalDate fFinal) {
+        try {
+            LocalDate alvo = parseData(dataAlvo, "Erro");
+            return !alvo.isBefore(inicial) && !alvo.isAfter(fFinal);
+        } catch(Exception e) {
+            return false;
         }
     }
 
@@ -136,22 +149,32 @@ public class Facade {
 
     // --- US 3: Cartão de Ponto ---
     public void lancaCartao(String empId, String data, String horas) throws Exception {
+        if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
         if (!(emp instanceof EmpregadoHorista)) throw new Exception("Empregado nao eh horista.");
         
+        parseData(data, "Data invalida."); // Apenas valida se a data explode
+        
         double horasVal = Double.parseDouble(horas.replace(",", "."));
+        if (horasVal <= 0) throw new Exception("Horas devem ser positivas.");
+        
         ((EmpregadoHorista) emp).addCartao(new CartaoDePonto(data, horasVal));
     }
 
-    public String getHorasTrabalhadas(String empId, String dataInicial, String dataFinal) throws Exception {
+    public String getHorasNormaisTrabalhadas(String empId, String dataInicial, String dataFinal) throws Exception {
+        if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
         if (!(emp instanceof EmpregadoHorista)) throw new Exception("Empregado nao eh horista.");
         
+        LocalDate inicio = parseData(dataInicial, "Data inicial invalida.");
+        LocalDate fim = parseData(dataFinal, "Data final invalida.");
+        if (inicio.isAfter(fim)) throw new Exception("Data inicial nao pode ser posterior aa data final.");
+        
         double normais = 0;
         for (CartaoDePonto cartao : ((EmpregadoHorista) emp).getCartoes()) {
-            if (isDataNoIntervalo(cartao.getData(), dataInicial, dataFinal)) {
+            if (isDataNoIntervalo(cartao.getData(), inicio, fim)) {
                 double h = cartao.getHoras();
                 normais += (h > 8) ? 8 : h;
             }
@@ -160,13 +183,18 @@ public class Facade {
     }
 
     public String getHorasExtrasTrabalhadas(String empId, String dataInicial, String dataFinal) throws Exception {
+        if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
         if (!(emp instanceof EmpregadoHorista)) throw new Exception("Empregado nao eh horista.");
         
+        LocalDate inicio = parseData(dataInicial, "Data inicial invalida.");
+        LocalDate fim = parseData(dataFinal, "Data final invalida.");
+        if (inicio.isAfter(fim)) throw new Exception("Data inicial nao pode ser posterior aa data final.");
+        
         double extras = 0;
         for (CartaoDePonto cartao : ((EmpregadoHorista) emp).getCartoes()) {
-            if (isDataNoIntervalo(cartao.getData(), dataInicial, dataFinal)) {
+            if (isDataNoIntervalo(cartao.getData(), inicio, fim)) {
                 double h = cartao.getHoras();
                 if (h > 8) extras += (h - 8);
             }
@@ -176,22 +204,32 @@ public class Facade {
 
     // --- US 4: Vendas ---
     public void lancaVenda(String empId, String data, String valor) throws Exception {
+        if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
         if (!(emp instanceof EmpregadoComissionado)) throw new Exception("Empregado nao eh comissionado.");
         
+        parseData(data, "Data invalida.");
+        
         double valorVal = Double.parseDouble(valor.replace(",", "."));
+        if (valorVal <= 0) throw new Exception("Valor deve ser positivo."); 
+        
         ((EmpregadoComissionado) emp).addVenda(new ResultadoVenda(data, valorVal));
     }
 
     public String getVendasRealizadas(String empId, String dataInicial, String dataFinal) throws Exception {
+        if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
         if (!(emp instanceof EmpregadoComissionado)) throw new Exception("Empregado nao eh comissionado.");
         
+        LocalDate inicio = parseData(dataInicial, "Data inicial invalida.");
+        LocalDate fim = parseData(dataFinal, "Data final invalida.");
+        if (inicio.isAfter(fim)) throw new Exception("Data inicial nao pode ser posterior aa data final.");
+        
         double total = 0;
         for (ResultadoVenda venda : ((EmpregadoComissionado) emp).getVendas()) {
-            if (isDataNoIntervalo(venda.getData(), dataInicial, dataFinal)) {
+            if (isDataNoIntervalo(venda.getData(), inicio, fim)) {
                 total += venda.getValor();
             }
         }
