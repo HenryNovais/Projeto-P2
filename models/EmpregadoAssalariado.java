@@ -1,6 +1,6 @@
 package models;
 
-public class EmpregadoAssalariado extends Empregado {
+public class EmpregadoAssalariado extends Empregado{
     protected String salarioMensal;
 
     public EmpregadoAssalariado(String id, String nome, String endereco, String salarioMensal) {
@@ -10,7 +10,6 @@ public class EmpregadoAssalariado extends Empregado {
 
     @Override
     public String getSalario() { return this.salarioMensal; }
-
     @Override
     public void setSalario(String salario) { this.salarioMensal = salario; }
 }

@@ -2,7 +2,7 @@ package models;
 import java.util.ArrayList;
 import java.util.List;
 
-public class EmpregadoComissionado extends EmpregadoAssalariado {
+public class EmpregadoComissionado extends EmpregadoAssalariado{
     private String comissao;
     private List<ResultadoVenda> vendas;
 

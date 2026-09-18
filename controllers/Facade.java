@@ -1,6 +1,7 @@
 package controllers;
 
 import models.*;
+import commands.UndoRedoManager;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.time.LocalDate;
@@ -8,15 +9,63 @@ import java.time.LocalDate;
 public class Facade {
     private Map<String, Empregado> empregados;
     private int nextId;
+    private UndoRedoManager urManager;
+    private boolean sistemaEncerrado;
 
-    public Facade() { zerarSistema(); }
-
-    public void zerarSistema() {
+    // Construtor original que cria as pilhas apenas UMA VEZ
+    public Facade() {
+        this.urManager = new UndoRedoManager();
         this.empregados = new LinkedHashMap<>();
         this.nextId = 1;
+        this.sistemaEncerrado = false;
     }
 
-    public void encerrarSistema() { }
+    // O pulo do gato: zerarSistema é uma ação desfazível!
+    public void zerarSistema() throws Exception {
+        salvarEstado(); 
+        this.empregados = new LinkedHashMap<>();
+        this.nextId = 1;
+        this.sistemaEncerrado = false;
+        // Não recriamos o urManager aqui, para preservar o histórico!
+    }
+
+    public void encerrarSistema() throws Exception { 
+        this.sistemaEncerrado = true; 
+    }
+
+    // --- UNDO / REDO ---
+    private void salvarEstado() {
+        urManager.saveState(new Object[] { this.empregados, this.nextId });
+    }
+
+    @SuppressWarnings("unchecked")
+    public void undo() throws Exception {
+        if (sistemaEncerrado) throw new Exception("Nao pode dar comandos depois de encerrarSistema.");
+        Object[] estadoAnterior = (Object[]) urManager.undo(new Object[] { this.empregados, this.nextId });
+        this.empregados = (Map<String, Empregado>) estadoAnterior[0];
+        this.nextId = (int) estadoAnterior[1];
+    }
+
+    @SuppressWarnings("unchecked")
+    public void redo() throws Exception {
+        if (sistemaEncerrado) throw new Exception("Nao pode dar comandos depois de encerrarSistema.");
+        Object[] estadoRefeito = (Object[]) urManager.redo(new Object[] { this.empregados, this.nextId });
+        this.empregados = (Map<String, Empregado>) estadoRefeito[0];
+        this.nextId = (int) estadoRefeito[1];
+    }
+
+    // --- MÉTODOS PENDENTES US 7 ---
+    public String getNumeroDeEmpregados() throws Exception {
+        return String.valueOf(this.empregados.size());
+    }
+
+    public void rodaFolha(String data, String saida) throws Exception { 
+        salvarEstado(); // A folha também é desfazível
+    }
+
+    public String totalFolha(String data) throws Exception { 
+        return "0,00"; 
+    }
 
     // --- MÉTODOS AUXILIARES E VALIDAÇÕES ---
     private String formatarValor(String valor) {
@@ -58,13 +107,8 @@ public class Facade {
         try {
             String[] partes = dataStr.split("/");
             if (partes.length != 3) throw new Exception();
-            int dia = Integer.parseInt(partes[0]);
-            int mes = Integer.parseInt(partes[1]);
-            int ano = Integer.parseInt(partes[2]);
-            return LocalDate.of(ano, mes, dia);
-        } catch (Exception e) {
-            throw new Exception(erroMsg);
-        }
+            return LocalDate.of(Integer.parseInt(partes[2]), Integer.parseInt(partes[1]), Integer.parseInt(partes[0]));
+        } catch (Exception e) { throw new Exception(erroMsg); }
     }
 
     private boolean isDataNoIntervalo(String dataAlvo, LocalDate inicial, LocalDate fFinal) {
@@ -91,6 +135,7 @@ public class Facade {
         if (!tipo.equals("horista") && !tipo.equals("assalariado")) throw new Exception("Tipo invalido.");
         validarSalario(salario);
 
+        salvarEstado();
         String id = String.valueOf(nextId++);
         Empregado emp = tipo.equals("horista") ? 
             new EmpregadoHorista(id, nome, endereco, formatarValor(salario)) : 
@@ -105,6 +150,7 @@ public class Facade {
         validarSalario(salario);
         validarComissao(comissao);
 
+        salvarEstado();
         String id = String.valueOf(nextId++);
         Empregado emp = new EmpregadoComissionado(id, nome, endereco, formatarValor(salario), comissao);
         empregados.put(id, emp);
@@ -114,7 +160,6 @@ public class Facade {
     public String getAtributoEmpregado(String empId, String atributo) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
-        
         Empregado emp = empregados.get(empId);
         
         if (atributo.equals("nome")) return emp.getNome();
@@ -141,7 +186,6 @@ public class Facade {
             if (atributo.equals("idSindicato")) return emp.getIdSindicato();
             if (atributo.equals("taxaSindical")) return formatarValor(String.valueOf(emp.getTaxaSindical()));
         }
-        
         throw new Exception("Atributo nao existe.");
     }
 
@@ -149,6 +193,7 @@ public class Facade {
     public void removerEmpregado(String empId) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
+        salvarEstado();
         empregados.remove(empId);
     }
 
@@ -174,6 +219,7 @@ public class Facade {
         double horasVal = Double.parseDouble(horas.replace(",", "."));
         if (horasVal <= 0) throw new Exception("Horas devem ser positivas.");
         
+        salvarEstado();
         ((EmpregadoHorista) emp).addCartao(new CartaoDePonto(data, horasVal));
     }
 
@@ -228,6 +274,7 @@ public class Facade {
         double valorVal = Double.parseDouble(valor.replace(",", "."));
         if (valorVal <= 0) throw new Exception("Valor deve ser positivo."); 
         
+        salvarEstado();
         ((EmpregadoComissionado) emp).addVenda(new ResultadoVenda(data, valorVal));
     }
 
@@ -266,6 +313,7 @@ public class Facade {
         double valorVal = Double.parseDouble(valor.replace(",", "."));
         if (valorVal <= 0) throw new Exception("Valor deve ser positivo.");
         
+        salvarEstado();
         emp.addTaxaServico(new TaxaServico(data, valorVal));
     }
 
@@ -296,31 +344,36 @@ public class Facade {
 
         if (atributo.equals("nome")) {
             if (valor == null || valor.isEmpty()) throw new Exception("Nome nao pode ser nulo.");
+            salvarEstado();
             emp.setNome(valor);
         } else if (atributo.equals("endereco")) {
             if (valor == null || valor.isEmpty()) throw new Exception("Endereco nao pode ser nulo.");
+            salvarEstado();
             emp.setEndereco(valor);
         } else if (atributo.equals("metodoPagamento")) {
-            if (!valor.equals("correios") && !valor.equals("emMaos") && !valor.equals("banco")) {
-                throw new Exception("Metodo de pagamento invalido.");
-            }
+            if (!valor.equals("correios") && !valor.equals("emMaos") && !valor.equals("banco")) throw new Exception("Metodo de pagamento invalido.");
+            salvarEstado();
             emp.setMetodoPagamento(valor);
         } else if (atributo.equals("sindicalizado")) {
             if (!valor.equals("true") && !valor.equals("false")) throw new Exception("Valor deve ser true ou false.");
             if (valor.equals("false")) {
+                salvarEstado();
                 emp.setSindicalizado(false);
                 emp.setIdSindicato(null);
                 emp.setTaxaSindical(0.0);
             }
         } else if (atributo.equals("salario")) {
             validarSalario(valor);
+            salvarEstado();
             emp.setSalario(formatarValor(valor));
         } else if (atributo.equals("comissao")) {
             if (!(emp instanceof EmpregadoComissionado)) throw new Exception("Empregado nao eh comissionado.");
             validarComissao(valor);
+            salvarEstado();
             ((EmpregadoComissionado) emp).setComissao(valor);
         } else if (atributo.equals("tipo")) {
             if (valor.equals("assalariado")) {
+                salvarEstado();
                 EmpregadoAssalariado novo = new EmpregadoAssalariado(emp.getId(), emp.getNome(), emp.getEndereco(), emp.getSalario());
                 copiarDados(emp, novo);
                 empregados.put(empId, novo);
@@ -332,7 +385,6 @@ public class Facade {
         }
     }
 
-    // Sobrecarga para alteracoes que recebem 4 argumentos (tipo horista e comissionado)
     public void alteraEmpregado(String empId, String atributo, String valor, String ext) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
@@ -341,11 +393,13 @@ public class Facade {
         if (atributo.equals("tipo")) {
             if (valor.equals("comissionado")) {
                 validarComissao(ext);
+                salvarEstado();
                 EmpregadoComissionado novo = new EmpregadoComissionado(emp.getId(), emp.getNome(), emp.getEndereco(), emp.getSalario(), ext);
                 copiarDados(emp, novo);
                 empregados.put(empId, novo);
             } else if (valor.equals("horista")) {
                 validarSalario(ext);
+                salvarEstado();
                 EmpregadoHorista novo = new EmpregadoHorista(emp.getId(), emp.getNome(), emp.getEndereco(), formatarValor(ext));
                 copiarDados(emp, novo);
                 empregados.put(empId, novo);
@@ -357,7 +411,6 @@ public class Facade {
         }
     }
 
-    // Sobrecarga para Sindicato
     public void alteraEmpregado(String empId, String atributo, String valor, String idSindicato, String taxaSindical) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
@@ -378,6 +431,7 @@ public class Facade {
                 }
             }
             
+            salvarEstado();
             Empregado emp = empregados.get(empId);
             emp.setSindicalizado(true);
             emp.setIdSindicato(idSindicato);
@@ -385,7 +439,6 @@ public class Facade {
         }
     }
 
-    // Sobrecarga para Conta Bancaria
     public void alteraEmpregado(String empId, String atributo, String valor, String banco, String agencia, String contaCorrente) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
@@ -396,6 +449,7 @@ public class Facade {
             if (agencia == null || agencia.isEmpty()) throw new Exception("Agencia nao pode ser nulo.");
             if (contaCorrente == null || contaCorrente.isEmpty()) throw new Exception("Conta corrente nao pode ser nulo.");
 
+            salvarEstado();
             emp.setMetodoPagamento("banco");
             emp.setBanco(banco);
             emp.setAgencia(agencia);

@@ -1,8 +1,9 @@
 package models;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-public abstract class Empregado {
+public abstract class Empregado implements Serializable {
     private String id;
     private String nome;
     private String endereco;
@@ -17,13 +18,8 @@ public abstract class Empregado {
     private String contaCorrente;
 
     public Empregado(String id, String nome, String endereco, String tipo) {
-        this.id = id;
-        this.nome = nome;
-        this.endereco = endereco;
-        this.tipo = tipo;
-        this.sindicalizado = false;
-        this.taxasServico = new ArrayList<>();
-        this.metodoPagamento = "emMaos";
+        this.id = id; this.nome = nome; this.endereco = endereco; this.tipo = tipo;
+        this.sindicalizado = false; this.taxasServico = new ArrayList<>(); this.metodoPagamento = "emMaos";
     }
 
     public String getId() { return id; }
@@ -54,5 +50,5 @@ public abstract class Empregado {
     public void setContaCorrente(String contaCorrente) { this.contaCorrente = contaCorrente; }
 
     public abstract String getSalario();
-    public abstract void setSalario(String salario); // Adicionado
+    public abstract void setSalario(String salario);
 }

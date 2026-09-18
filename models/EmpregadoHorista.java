@@ -2,7 +2,7 @@ package models;
 import java.util.ArrayList;
 import java.util.List;
 
-public class EmpregadoHorista extends Empregado {
+public class EmpregadoHorista extends Empregado{
     private String salarioPorHora;
     private List<CartaoDePonto> cartoes;
 
@@ -14,7 +14,6 @@ public class EmpregadoHorista extends Empregado {
 
     @Override
     public String getSalario() { return this.salarioPorHora; }
-
     @Override
     public void setSalario(String salario) { this.salarioPorHora = salario; }
 
