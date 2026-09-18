@@ -6,10 +6,10 @@ public class Main {
         
         EasyAccept.main(new String[]{
             facade,
-            "tests/us3.txt",
-            "tests/us3_1.txt",
-            "tests/us4.txt",
-            "tests/us4_1.txt"
+            "tests/us5.txt",
+            "tests/us5_1.txt",
+            "tests/us6.txt",
+            "tests/us6_1.txt"
         });
     }
 }

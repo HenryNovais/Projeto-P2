@@ -13,15 +13,9 @@ public class EmpregadoComissionado extends EmpregadoAssalariado {
         this.vendas = new ArrayList<>();
     }
     
-    public String getComissao() {
-        return this.comissao;
-    }
+    public String getComissao() { return this.comissao; }
+    public void setComissao(String comissao) { this.comissao = comissao; }
 
-    public void addVenda(ResultadoVenda venda) {
-        this.vendas.add(venda);
-    }
-
-    public List<ResultadoVenda> getVendas() {
-        return this.vendas;
-    }
+    public void addVenda(ResultadoVenda venda) { this.vendas.add(venda); }
+    public List<ResultadoVenda> getVendas() { return this.vendas; }
 }

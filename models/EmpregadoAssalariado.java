@@ -9,7 +9,8 @@ public class EmpregadoAssalariado extends Empregado {
     }
 
     @Override
-    public String getSalario() {
-        return this.salarioMensal;
-    }
+    public String getSalario() { return this.salarioMensal; }
+
+    @Override
+    public void setSalario(String salario) { this.salarioMensal = salario; }
 }

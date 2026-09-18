@@ -13,15 +13,11 @@ public class EmpregadoHorista extends Empregado {
     }
 
     @Override
-    public String getSalario() {
-        return this.salarioPorHora;
-    }
+    public String getSalario() { return this.salarioPorHora; }
 
-    public void addCartao(CartaoDePonto cartao) {
-        this.cartoes.add(cartao);
-    }
+    @Override
+    public void setSalario(String salario) { this.salarioPorHora = salario; }
 
-    public List<CartaoDePonto> getCartoes() {
-        return this.cartoes;
-    }
+    public void addCartao(CartaoDePonto cartao) { this.cartoes.add(cartao); }
+    public List<CartaoDePonto> getCartoes() { return this.cartoes; }
 }
