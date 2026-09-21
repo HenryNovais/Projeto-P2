@@ -6,7 +6,7 @@ public class Main {
         
         EasyAccept.main(new String[]{
             facade,
-            "tests/us8.txt"
+            "tests/us7.txt"
         });
     }
 }

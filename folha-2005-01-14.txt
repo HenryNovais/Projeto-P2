@@ -1,0 +1,39 @@
+=============================================================
+Nome: Fernanda Montenegro
+Metodo de pagamento: emMaos
+Valor: 0,00
+=============================================================
+Nome: Paloma Duarte
+Metodo de pagamento: banco
+Valor: 0,00
+=============================================================
+Nome: Lavinia Vlasak
+Metodo de pagamento: banco
+Valor: 0,00
+=============================================================
+Nome: Claudia Abreu
+Metodo de pagamento: emMaos
+Valor: 0,00
+=============================================================
+Nome: Claudia Raia
+Metodo de pagamento: banco
+Valor: 0,00
+=============================================================
+Nome: Deborah Secco
+Metodo de pagamento: correios
+Valor: 650,00
+=============================================================
+Nome: Ana Paula Arosio
+Metodo de pagamento: correios
+Valor: 738,81
+=============================================================
+Nome: Suzana Vieira
+Metodo de pagamento: correios
+Valor: 791,05
+=============================================================
+Nome: Maite Proenca
+Metodo de pagamento: correios
+Valor: 774,28
+=============================================================
+TOTAL FOLHA: 2954,15
+=============================================================

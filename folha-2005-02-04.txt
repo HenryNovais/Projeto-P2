@@ -1,0 +1,23 @@
+=============================================================
+Nome: Fernanda Montenegro
+Metodo de pagamento: emMaos
+Valor: 0,00
+=============================================================
+Nome: Paloma Duarte
+Metodo de pagamento: banco
+Valor: 168,75
+=============================================================
+Nome: Lavinia Vlasak
+Metodo de pagamento: banco
+Valor: 168,15
+=============================================================
+Nome: Claudia Abreu
+Metodo de pagamento: emMaos
+Valor: 164,00
+=============================================================
+Nome: Claudia Raia
+Metodo de pagamento: banco
+Valor: 148,80
+=============================================================
+TOTAL FOLHA: 649,70
+=============================================================
