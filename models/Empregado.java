@@ -1,5 +1,6 @@
 package models;
 import java.io.Serializable;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,6 +17,22 @@ public abstract class Empregado implements Serializable {
     private String banco;
     private String agencia;
     private String contaCorrente;
+    // Data do ultimo pagamento efetivado (null = nunca foi pago).
+    // NAO apagamos cartoes/vendas/taxas ao pagar: usamos essa data como
+    // marca d'agua para saber o que ja entrou em folha, mantendo o
+    // historico consultavel (getHorasTrabalhadas, getVendasRealizadas, ...)
+    // e o undo/redo consistentes.
+    private LocalDate dataUltimoPagamento;
+    // Data de contratacao (regra simplificada do enunciado, ja que ainda
+    // nao existe um comando para informa-la): horista = data do primeiro
+    // cartao lancado; assalariado/comissionado = 1/1/2005, atribuido pela
+    // Facade na criacao.
+    private LocalDate dataContratacao;
+
+    public LocalDate getDataUltimoPagamento() { return dataUltimoPagamento; }
+    public void setDataUltimoPagamento(LocalDate data) { this.dataUltimoPagamento = data; }
+    public LocalDate getDataContratacao() { return dataContratacao; }
+    public void setDataContratacao(LocalDate data) { this.dataContratacao = data; }
 
     public Empregado(String id, String nome, String endereco, String tipo) {
         this.id = id; this.nome = nome; this.endereco = endereco; this.tipo = tipo;

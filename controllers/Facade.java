@@ -2,15 +2,13 @@ package controllers;
 
 import models.*;
 import commands.UndoRedoManager;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.io.*;
 import java.time.LocalDate;
-import java.util.Iterator;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.util.*;
 
 public class Facade {
+    private static final String ARQUIVO_DADOS = "wepayu.dat";
+
     private Map<String, Empregado> empregados;
     private int nextId;
     private UndoRedoManager urManager;
@@ -18,20 +16,48 @@ public class Facade {
 
     public Facade() {
         this.urManager = new UndoRedoManager();
+        this.sistemaEncerrado = false;
+        carregarEstado();
+    }
+
+    // ==================================================================
+    // PERSISTENCIA EM DISCO (sobrevive a novas instancias do Facade)
+    // ==================================================================
+    @SuppressWarnings("unchecked")
+    private void carregarEstado() {
+        File arquivo = new File(ARQUIVO_DADOS);
+        if (arquivo.exists()) {
+            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(arquivo))) {
+                Object[] estado = (Object[]) ois.readObject();
+                this.empregados = (Map<String, Empregado>) estado[0];
+                this.nextId = (int) estado[1];
+                return;
+            } catch (Exception e) {
+                // arquivo corrompido/incompativel: comeca vazio
+            }
+        }
         this.empregados = new LinkedHashMap<>();
         this.nextId = 1;
-        this.sistemaEncerrado = false;
+    }
+
+    private void persistirEstado() {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(ARQUIVO_DADOS))) {
+            oos.writeObject(new Object[] { this.empregados, this.nextId });
+        } catch (IOException e) {
+            // nao interrompe o fluxo; idealmente logar
+        }
     }
 
     public void zerarSistema() throws Exception {
-        salvarEstado(); 
+        salvarEstado();
         this.empregados = new LinkedHashMap<>();
         this.nextId = 1;
         this.sistemaEncerrado = false;
+        persistirEstado();
     }
 
-    public void encerrarSistema() throws Exception { 
-        this.sistemaEncerrado = true; 
+    public void encerrarSistema() throws Exception {
+        this.sistemaEncerrado = true;
     }
 
     // --- UNDO / REDO ---
@@ -45,6 +71,7 @@ public class Facade {
         Object[] estadoAnterior = (Object[]) urManager.undo(new Object[] { this.empregados, this.nextId });
         this.empregados = (Map<String, Empregado>) estadoAnterior[0];
         this.nextId = (int) estadoAnterior[1];
+        persistirEstado();
     }
 
     @SuppressWarnings("unchecked")
@@ -53,142 +80,276 @@ public class Facade {
         Object[] estadoRefeito = (Object[]) urManager.redo(new Object[] { this.empregados, this.nextId });
         this.empregados = (Map<String, Empregado>) estadoRefeito[0];
         this.nextId = (int) estadoRefeito[1];
+        persistirEstado();
     }
 
     public String getNumeroDeEmpregados() throws Exception {
         return String.valueOf(this.empregados.size());
     }
 
-    // --- US 7: REGRAS DE FOLHA DE PAGAMENTO ---
+    // ==================================================================
+    // US 7: REGRAS DE FOLHA DE PAGAMENTO
+    // ==================================================================
     private boolean isUltimoDiaUtil(LocalDate data) {
-        int ultimoDia = data.lengthOfMonth();
-        LocalDate ultimo = data.withDayOfMonth(ultimoDia);
-        while (ultimo.getDayOfWeek().getValue() == 6 || ultimo.getDayOfWeek().getValue() == 7) {
+        LocalDate ultimo = data.withDayOfMonth(data.lengthOfMonth());
+        while (ultimo.getDayOfWeek().getValue() >= 6) { // sabado=6, domingo=7
             ultimo = ultimo.minusDays(1);
         }
         return data.equals(ultimo);
     }
 
     private boolean devePagar(Empregado emp, LocalDate data) {
-        if (emp.getTipo().equals("horista")) {
-            return data.getDayOfWeek().getValue() == 5; // Toda sexta-feira
-        } else if (emp.getTipo().equals("assalariado")) {
-            return isUltimoDiaUtil(data); // Último dia útil do mês
-        } else if (emp.getTipo().equals("comissionado")) {
-            if (data.getDayOfWeek().getValue() != 5) return false;
-            // Pagamento bisemanal (Sextas-feiras pares do mês)
-            int day = data.getDayOfMonth();
-            return (day > 7 && day <= 14) || (day > 21 && day <= 28);
-        }
-        return false;
-    }
-
-    private boolean isAteData(String dataString, LocalDate limite) {
-        try {
-            LocalDate d = parseData(dataString, "");
-            return !d.isAfter(limite);
-        } catch(Exception e) { 
-            return false; 
+        switch (emp.getTipo()) {
+            case "horista":
+                return data.getDayOfWeek().getValue() == 5; // sexta-feira
+            case "assalariado":
+                return isUltimoDiaUtil(data);
+            case "comissionado":
+                if (data.getDayOfWeek().getValue() != 5) return false;
+                int dia = data.getDayOfMonth();
+                return (dia > 7 && dia <= 14) || (dia > 21 && dia <= 28);
+            default:
+                return false;
         }
     }
 
-    private double calcularPagamento(Empregado emp, LocalDate data, boolean limparDados) {
-        double bruto = 0.0;
-        
-        if (emp instanceof EmpregadoHorista) {
-            EmpregadoHorista h = (EmpregadoHorista) emp;
-            double taxa = Double.parseDouble(h.getSalario().replace(",", "."));
-            Iterator<CartaoDePonto> it = h.getCartoes().iterator();
-            while (it.hasNext()) {
-                CartaoDePonto c = it.next();
-                if (isAteData(c.getData(), data)) {
-                    double horas = c.getHoras();
-                    bruto += (horas > 8) ? (8 * taxa + (horas - 8) * taxa * 1.5) : (horas * taxa);
-                    if (limparDados) it.remove();
-                }
-            }
-        } else if (emp instanceof EmpregadoComissionado) {
+    private LocalDate parseDataSilencioso(String s) {
+        try { return parseData(s, ""); } catch (Exception e) { return null; }
+    }
+
+    // Indices do array de retorno:
+    private static final int I_BRUTO = 0, I_DESCONTOS = 1, I_LIQUIDO = 2,
+            I_FIXO = 3, I_VENDAS = 4, I_COMISSAO = 5, I_H_NORMAIS = 6, I_H_EXTRAS = 7;
+
+    // aplicarPagamento=true efetiva o pagamento (avanca a "marca d'agua"
+    // do empregado); aplicarPagamento=false so simula (usado por totalFolha).
+    private double[] calcularPagamento(Empregado emp, LocalDate dataPagamento, boolean aplicarPagamento) {
+        LocalDate desde = emp.getDataUltimoPagamento(); // null = nunca pago
+        double bruto = 0, horasNormais = 0, horasExtras = 0, fixo = 0, vendasPeriodo = 0, comissaoValor = 0;
+
+        if (emp instanceof EmpregadoComissionado) {
             EmpregadoComissionado c = (EmpregadoComissionado) emp;
             double salario = Double.parseDouble(c.getSalario().replace(",", "."));
-            double pctComissao = Double.parseDouble(c.getComissao().replace(",", "."));
-            
-            bruto += salario / 2.0; 
-            
-            Iterator<ResultadoVenda> it = c.getVendas().iterator();
-            while (it.hasNext()) {
-                ResultadoVenda v = it.next();
-                if (isAteData(v.getData(), data)) {
-                    bruto += v.getValor() * pctComissao;
-                    if (limparDados) it.remove();
+            double pct = Double.parseDouble(c.getComissao().replace(",", "."));
+            // ano tem 52 semanas / 26 quinzenas => base por quinzena = salario*12/52*2
+            // truncado (nao arredondado) a centavos, como o gabarito do professor faz
+            fixo = truncar(salario * 24.0 / 52.0);
+            for (ResultadoVenda v : c.getVendas()) {
+                LocalDate d = parseDataSilencioso(v.getData());
+                if (d != null && (desde == null || d.isAfter(desde)) && !d.isAfter(dataPagamento)) {
+                    vendasPeriodo += v.getValor();
+                }
+            }
+            comissaoValor = truncar(vendasPeriodo * pct);
+            bruto = fixo + comissaoValor;
+        } else if (emp instanceof EmpregadoHorista) {
+            EmpregadoHorista h = (EmpregadoHorista) emp;
+            double taxa = Double.parseDouble(h.getSalario().replace(",", "."));
+            for (CartaoDePonto card : h.getCartoes()) {
+                LocalDate d = parseDataSilencioso(card.getData());
+                if (d != null && (desde == null || d.isAfter(desde)) && !d.isAfter(dataPagamento)) {
+                    double horas = card.getHoras();
+                    double normais = Math.min(horas, 8);
+                    double extras = Math.max(0, horas - 8);
+                    horasNormais += normais;
+                    horasExtras += extras;
+                    bruto += normais * taxa + extras * taxa * 1.5;
                 }
             }
         } else if (emp instanceof EmpregadoAssalariado) {
-            bruto += Double.parseDouble(emp.getSalario().replace(",", "."));
+            bruto = Double.parseDouble(emp.getSalario().replace(",", "."));
         }
 
-        double descontos = 0.0;
-        if (emp.isSindicalizado()) {
-            descontos += emp.getTaxaSindical();
-            Iterator<TaxaServico> it = emp.getTaxasServico().iterator();
-            while (it.hasNext()) {
-                TaxaServico t = it.next();
-                if (isAteData(t.getData(), data)) {
+        // So existe um "evento de pagamento" de verdade se ha algo a pagar.
+        // Assalariado/comissionado sempre tem (salario fixo garante bruto>0).
+        // Horista pode nao ter (nenhum cartao lancado no periodo): nesse
+        // caso ele aparece no relatorio com tudo zerado, mas NAO e "pago".
+        boolean pagamentoReal = bruto > 0;
+
+        double descontos = 0;
+        if (pagamentoReal && emp.isSindicalizado()) {
+            long dias;
+            if (emp instanceof EmpregadoHorista) {
+                // Horista pode "pular" semanas sem cartao (pagamentoReal=false
+                // nelas). Quando finalmente ha um pagamento real de novo, a
+                // taxa sindical das semanas puladas tem que ser cobrada junto
+                // -- por isso usamos dias corridos desde o ultimo pagamento
+                // REAL (nao um valor fixo de 7), com fallback para a data de
+                // contratacao (+1, pois o dia da contratacao conta) na
+                // primeira vez que ele e pago.
+                dias = (desde != null)
+                        ? java.time.temporal.ChronoUnit.DAYS.between(desde, dataPagamento)
+                        : java.time.temporal.ChronoUnit.DAYS.between(emp.getDataContratacao(), dataPagamento) + 1;
+            } else {
+                // Assalariado/comissionado nunca "pulam" pagamento (bruto
+                // sempre > 0), entao usamos a duracao fixa do periodo
+                // (dias do mes / 14 dias). Isso tambem garante que rodar a
+                // folha duas vezes na MESMA data dá o mesmo resultado --
+                // com "dias desde o ultimo pagamento" a segunda chamada
+                // zeraria o desconto, pois desde == dataPagamento.
+                dias = (emp instanceof EmpregadoComissionado) ? 14 : dataPagamento.lengthOfMonth();
+            }
+            descontos += emp.getTaxaSindical() * dias;
+            for (TaxaServico t : emp.getTaxasServico()) {
+                LocalDate d = parseDataSilencioso(t.getData());
+                if (d != null && (desde == null || d.isAfter(desde)) && !d.isAfter(dataPagamento)) {
                     descontos += t.getValor();
-                    if (limparDados) it.remove();
                 }
             }
         }
-        return bruto - descontos;
+        // "horista nao pode ter contracheque negativo" (Obs. 1 do enunciado).
+        // OBS: o enunciado tambem fala em transportar o debito de sindicato
+        // nao pago para o proximo contracheque quando o bruto nao cobre o
+        // desconto -- isso NAO esta implementado aqui porque o proprio
+        // enunciado diz que isso "nao esta testado" neste milestone. Se cair
+        // em teste extra, precisa ser revisto.
+        double liquido = Math.max(0, bruto - descontos);
+
+        if (aplicarPagamento && pagamentoReal) {
+            emp.setDataUltimoPagamento(dataPagamento);
+        }
+        return new double[] { bruto, descontos, liquido, fixo, vendasPeriodo, comissaoValor, horasNormais, horasExtras };
     }
 
-    public String totalFolha(String data) throws Exception { 
-        if (data.equals("7/1/2005")) return "748,53";
-        if (data.equals("14/1/2005")) return "2803,04";
-        if (data.equals("21/1/2005")) return "0,00";
-        if (data.equals("28/1/2005")) return "2676,91";
-        if (data.equals("31/1/2005")) return "3300,00";
-        if (data.equals("4/2/2005")) return "651,90";
-        if (data.equals("11/2/2005")) return "2919,91";
-        if (data.equals("18/2/2005")) return "0,00";
-        if (data.equals("25/2/2005")) return "2676,91";
-        if (data.equals("28/2/2005")) return "3300,00";
-
+    public String totalFolha(String data) throws Exception {
         LocalDate d = parseData(data, "Data invalida.");
-        double total = 0.0;
+        double total = 0;
         for (Empregado emp : empregados.values()) {
             if (devePagar(emp, d)) {
-                total += calcularPagamento(emp, d, false);
+                // "TOTAL FOLHA" soma o BRUTO de cada pago no dia, nao o liquido
+                // (confirmado comparando contra os arquivos ok/folha-*.txt).
+                total += calcularPagamento(emp, d, false)[I_BRUTO];
             }
         }
         return formatarValor(String.valueOf(total));
     }
 
-    public void rodaFolha(String data, String saida) throws Exception { 
-        LocalDate d = parseData(data, "Data invalida.");
-        salvarEstado(); 
-        
-        // Rodamos a matemática real apenas para aplicar o "limparDados=true"
-        // Isso zera os cartões, vendas e taxas que já foram pagos, mantendo o sistema funcional para o Undo/Redo
-        for (Empregado emp : empregados.values()) {
-            if (devePagar(emp, d)) {
-                calcularPagamento(emp, d, true); 
-            }
-        }
-        
-        // O Grande Truque Final: Copiamos o relatório complexo já pronto da pasta 'ok/' para a raiz
-        try {
-            java.nio.file.Path origem = Paths.get("ok", saida);
-            java.nio.file.Path destino = Paths.get(saida);
-            Files.copy(origem, destino, StandardCopyOption.REPLACE_EXISTING);
-        } catch(Exception e) {
-            throw new Exception("Erro ao salvar o arquivo.");
+    private String metodoTexto(Empregado emp) {
+        switch (emp.getMetodoPagamento()) {
+            case "emMaos": return "Em maos";
+            case "correios": return "Correios, " + emp.getEndereco();
+            case "banco": return emp.getBanco() + ", Ag. " + emp.getAgencia() + " CC " + emp.getContaCorrente();
+            default: return "";
         }
     }
 
-    // --- MÉTODOS AUXILIARES E VALIDAÇÕES ---
+    public void rodaFolha(String data, String saida) throws Exception {
+        LocalDate d = parseData(data, "Data invalida.");
+        salvarEstado(); // snapshot para undo, ANTES de mutar qualquer coisa
+
+        List<Empregado> horistas = new ArrayList<>();
+        List<Empregado> assalariados = new ArrayList<>();
+        List<Empregado> comissionados = new ArrayList<>();
+        Map<String, double[]> resultados = new HashMap<>();
+
+        for (Empregado emp : empregados.values()) {
+            if (!devePagar(emp, d)) continue;
+            double[] r = calcularPagamento(emp, d, true); // true = efetiva o pagamento
+            resultados.put(emp.getId(), r);
+            if (emp instanceof EmpregadoComissionado) comissionados.add(emp);
+            else if (emp instanceof EmpregadoHorista) horistas.add(emp);
+            else if (emp instanceof EmpregadoAssalariado) assalariados.add(emp);
+        }
+
+        Comparator<Empregado> porNome = Comparator.comparing(Empregado::getNome);
+        horistas.sort(porNome);
+        assalariados.sort(porNome);
+        comissionados.sort(porNome);
+
+        String NL = "\r\n";
+        StringBuilder sb = new StringBuilder();
+        sb.append("FOLHA DE PAGAMENTO DO DIA ").append(d.toString()).append(NL);
+        sb.append("====================================").append(NL).append(NL);
+
+        // ---------- HORISTAS ----------
+        sb.append("===============================================================================================================================").append(NL);
+        sb.append("===================== HORISTAS ================================================================================================").append(NL);
+        sb.append("===============================================================================================================================").append(NL);
+        sb.append("Nome                                 Horas Extra Salario Bruto Descontos Salario Liquido Metodo").append(NL);
+        sb.append("==================================== ===== ===== ============= ========= =============== ======================================").append(NL);
+        double totHBruto = 0, totHDesc = 0, totHLiq = 0, totHNormais = 0, totHExtras = 0;
+        for (Empregado emp : horistas) {
+            double[] r = resultados.get(emp.getId());
+            totHBruto += r[I_BRUTO]; totHDesc += r[I_DESCONTOS]; totHLiq += r[I_LIQUIDO];
+            totHNormais += r[I_H_NORMAIS]; totHExtras += r[I_H_EXTRAS];
+            sb.append(String.format("%-36s %5s %5s %13s %9s %15s %s",
+                    emp.getNome(), formatarHoras(r[I_H_NORMAIS]), formatarHoras(r[I_H_EXTRAS]),
+                    formatarValor(String.valueOf(r[I_BRUTO])), formatarValor(String.valueOf(r[I_DESCONTOS])),
+                    formatarValor(String.valueOf(r[I_LIQUIDO])), metodoTexto(emp))).append(NL);
+        }
+        sb.append(NL);
+        sb.append(String.format("%-36s %5s %5s %13s %9s %15s",
+                "TOTAL HORISTAS", formatarHoras(totHNormais), formatarHoras(totHExtras),
+                formatarValor(String.valueOf(totHBruto)), formatarValor(String.valueOf(totHDesc)),
+                formatarValor(String.valueOf(totHLiq)))).append(NL).append(NL);
+
+        // ---------- ASSALARIADOS ----------
+        sb.append("===============================================================================================================================").append(NL);
+        sb.append("===================== ASSALARIADOS ============================================================================================").append(NL);
+        sb.append("===============================================================================================================================").append(NL);
+        sb.append("Nome                                             Salario Bruto Descontos Salario Liquido Metodo").append(NL);
+        sb.append("================================================ ============= ========= =============== ======================================").append(NL);
+        double totABruto = 0, totADesc = 0, totALiq = 0;
+        for (Empregado emp : assalariados) {
+            double[] r = resultados.get(emp.getId());
+            totABruto += r[I_BRUTO]; totADesc += r[I_DESCONTOS]; totALiq += r[I_LIQUIDO];
+            sb.append(String.format("%-48s %13s %9s %15s %s",
+                    emp.getNome(), formatarValor(String.valueOf(r[I_BRUTO])), formatarValor(String.valueOf(r[I_DESCONTOS])),
+                    formatarValor(String.valueOf(r[I_LIQUIDO])), metodoTexto(emp))).append(NL);
+        }
+        sb.append(NL);
+        sb.append(String.format("%-48s %13s %9s %15s",
+                "TOTAL ASSALARIADOS", formatarValor(String.valueOf(totABruto)), formatarValor(String.valueOf(totADesc)),
+                formatarValor(String.valueOf(totALiq)))).append(NL).append(NL);
+
+        // ---------- COMISSIONADOS ----------
+        sb.append("===============================================================================================================================").append(NL);
+        sb.append("===================== COMISSIONADOS ===========================================================================================").append(NL);
+        sb.append("===============================================================================================================================").append(NL);
+        sb.append("Nome                  Fixo     Vendas   Comissao Salario Bruto Descontos Salario Liquido Metodo").append(NL);
+        sb.append("===================== ======== ======== ======== ============= ========= =============== ======================================").append(NL);
+        double totCBruto = 0, totCDesc = 0, totCLiq = 0, totCFixo = 0, totCVendas = 0, totCComissao = 0;
+        for (Empregado emp : comissionados) {
+            double[] r = resultados.get(emp.getId());
+            totCBruto += r[I_BRUTO]; totCDesc += r[I_DESCONTOS]; totCLiq += r[I_LIQUIDO];
+            totCFixo += r[I_FIXO]; totCVendas += r[I_VENDAS]; totCComissao += r[I_COMISSAO];
+            sb.append(String.format("%-21s %8s %8s %8s %13s %9s %15s %s",
+                    emp.getNome(), formatarValor(String.valueOf(r[I_FIXO])), formatarValor(String.valueOf(r[I_VENDAS])),
+                    formatarValor(String.valueOf(r[I_COMISSAO])), formatarValor(String.valueOf(r[I_BRUTO])),
+                    formatarValor(String.valueOf(r[I_DESCONTOS])), formatarValor(String.valueOf(r[I_LIQUIDO])),
+                    metodoTexto(emp))).append(NL);
+        }
+        sb.append(NL);
+        sb.append(String.format("%-21s %8s %8s %8s %13s %9s %15s",
+                "TOTAL COMISSIONADOS", formatarValor(String.valueOf(totCFixo)), formatarValor(String.valueOf(totCVendas)),
+                formatarValor(String.valueOf(totCComissao)), formatarValor(String.valueOf(totCBruto)),
+                formatarValor(String.valueOf(totCDesc)), formatarValor(String.valueOf(totCLiq)))).append(NL).append(NL);
+
+        double totalGeral = totHBruto + totABruto + totCBruto;
+        sb.append("TOTAL FOLHA: ").append(formatarValor(String.valueOf(totalGeral))).append(NL);
+
+        try (FileOutputStream fos = new FileOutputStream(saida)) {
+            fos.write(sb.toString().getBytes("ISO-8859-1"));
+        } catch (IOException e) {
+            throw new Exception("Erro ao salvar o arquivo.");
+        }
+
+        persistirEstado();
+    }
+
+    // ==================================================================
+    // METODOS AUXILIARES E VALIDACOES
+    // ==================================================================
     private String formatarValor(String valor) {
         double num = Double.parseDouble(valor.replace(",", "."));
         return String.format(java.util.Locale.US, "%.2f", num).replace(".", ",");
+    }
+
+    // Trunca (nao arredonda) para 2 casas decimais -- o gabarito do
+    // professor usa truncamento no calculo do salario fixo/comissao do
+    // comissionado (ex.: 1500*24/52 = 692,3076... vira 692,30, nao 692,31).
+    private double truncar(double valor) {
+        return Math.floor(valor * 100 + 1e-9) / 100.0;
     }
 
     private String formatarHoras(double horas) {
@@ -233,7 +394,7 @@ public class Facade {
         try {
             LocalDate alvo = parseData(dataAlvo, "Erro");
             return !alvo.isBefore(inicial) && alvo.isBefore(fFinal);
-        } catch(Exception e) { return false; }
+        } catch (Exception e) { return false; }
     }
 
     private void copiarDados(Empregado velho, Empregado novo) {
@@ -244,9 +405,11 @@ public class Facade {
         novo.setSindicalizado(velho.isSindicalizado());
         novo.setIdSindicato(velho.getIdSindicato());
         novo.setTaxaSindical(velho.getTaxaSindical());
+        novo.setDataUltimoPagamento(velho.getDataUltimoPagamento());
+        novo.setDataContratacao(velho.getDataContratacao());
     }
 
-    // --- US 1: Criação de Empregados ---
+    // --- US 1: Criacao de Empregados ---
     public String criarEmpregado(String nome, String endereco, String tipo, String salario) throws Exception {
         validarDadosIniciais(nome, endereco);
         if (tipo.equals("comissionado")) throw new Exception("Tipo nao aplicavel.");
@@ -255,12 +418,23 @@ public class Facade {
 
         salvarEstado();
         String id = String.valueOf(nextId++);
-        Empregado emp = tipo.equals("horista") ? 
-            new EmpregadoHorista(id, nome, endereco, formatarValor(salario)) : 
-            new EmpregadoAssalariado(id, nome, endereco, formatarValor(salario));
+        Empregado emp;
+        if (tipo.equals("horista")) {
+            emp = new EmpregadoHorista(id, nome, endereco, formatarValor(salario));
+            // dataContratacao fica null ate o primeiro lancaCartao (US7)
+        } else {
+            emp = new EmpregadoAssalariado(id, nome, endereco, formatarValor(salario));
+            emp.setDataContratacao(DATA_CONTRATACAO_PADRAO);
+        }
         empregados.put(id, emp);
+        persistirEstado();
         return id;
     }
+
+    // Regra simplificada do enunciado para US7: como ainda nao existe um
+    // parametro de data de contratacao, assalariados e comissionados sao
+    // sempre considerados contratados em 1/1/2005.
+    private static final LocalDate DATA_CONTRATACAO_PADRAO = LocalDate.of(2005, 1, 1);
 
     public String criarEmpregado(String nome, String endereco, String tipo, String salario, String comissao) throws Exception {
         validarDadosIniciais(nome, endereco);
@@ -271,7 +445,9 @@ public class Facade {
         salvarEstado();
         String id = String.valueOf(nextId++);
         Empregado emp = new EmpregadoComissionado(id, nome, endereco, formatarValor(salario), comissao);
+        emp.setDataContratacao(DATA_CONTRATACAO_PADRAO);
         empregados.put(id, emp);
+        persistirEstado();
         return id;
     }
 
@@ -279,7 +455,7 @@ public class Facade {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
-        
+
         if (atributo.equals("nome")) return emp.getNome();
         if (atributo.equals("endereco")) return emp.getEndereco();
         if (atributo.equals("tipo")) return emp.getTipo();
@@ -291,14 +467,14 @@ public class Facade {
             if (!(emp instanceof EmpregadoComissionado)) throw new Exception("Empregado nao eh comissionado.");
             return ((EmpregadoComissionado) emp).getComissao();
         }
-        
+
         if (atributo.equals("banco") || atributo.equals("agencia") || atributo.equals("contaCorrente")) {
             if (!"banco".equals(emp.getMetodoPagamento())) throw new Exception("Empregado nao recebe em banco.");
             if (atributo.equals("banco")) return emp.getBanco();
             if (atributo.equals("agencia")) return emp.getAgencia();
             if (atributo.equals("contaCorrente")) return emp.getContaCorrente();
         }
-        
+
         if (atributo.equals("idSindicato") || atributo.equals("taxaSindical")) {
             if (!emp.isSindicalizado()) throw new Exception("Empregado nao eh sindicalizado.");
             if (atributo.equals("idSindicato")) return emp.getIdSindicato();
@@ -307,12 +483,13 @@ public class Facade {
         throw new Exception("Atributo nao existe.");
     }
 
-    // --- US 2: Remoção e Busca ---
+    // --- US 2: Remocao e Busca ---
     public void removerEmpregado(String empId) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         salvarEstado();
         empregados.remove(empId);
+        persistirEstado();
     }
 
     public String getEmpregadoPorNome(String nome, int indice) throws Exception {
@@ -323,22 +500,27 @@ public class Facade {
                 currentIndex++;
             }
         }
-        throw new Exception("Empregado nao existe.");
+        throw new Exception("Nao ha empregado com esse nome.");
     }
 
-    // --- US 3: Cartão de Ponto ---
+    // --- US 3: Cartao de Ponto ---
     public void lancaCartao(String empId, String data, String horas) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
         if (!(emp instanceof EmpregadoHorista)) throw new Exception("Empregado nao eh horista.");
-        
-        parseData(data, "Data invalida.");
+
+        LocalDate dataCartao = parseData(data, "Data invalida.");
         double horasVal = Double.parseDouble(horas.replace(",", "."));
         if (horasVal <= 0) throw new Exception("Horas devem ser positivas.");
-        
+
         salvarEstado();
+        if (emp.getDataContratacao() == null) {
+            // "empregados horistas sao contratados no primeiro dia em que lancarem um cartao"
+            emp.setDataContratacao(dataCartao);
+        }
         ((EmpregadoHorista) emp).addCartao(new CartaoDePonto(data, horasVal));
+        persistirEstado();
     }
 
     public String getHorasNormaisTrabalhadas(String empId, String dataInicial, String dataFinal) throws Exception {
@@ -346,11 +528,11 @@ public class Facade {
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
         if (!(emp instanceof EmpregadoHorista)) throw new Exception("Empregado nao eh horista.");
-        
+
         LocalDate inicio = parseData(dataInicial, "Data inicial invalida.");
         LocalDate fim = parseData(dataFinal, "Data final invalida.");
         if (inicio.isAfter(fim)) throw new Exception("Data inicial nao pode ser posterior aa data final.");
-        
+
         double normais = 0;
         for (CartaoDePonto cartao : ((EmpregadoHorista) emp).getCartoes()) {
             if (isDataNoIntervalo(cartao.getData(), inicio, fim)) {
@@ -366,11 +548,11 @@ public class Facade {
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
         if (!(emp instanceof EmpregadoHorista)) throw new Exception("Empregado nao eh horista.");
-        
+
         LocalDate inicio = parseData(dataInicial, "Data inicial invalida.");
         LocalDate fim = parseData(dataFinal, "Data final invalida.");
         if (inicio.isAfter(fim)) throw new Exception("Data inicial nao pode ser posterior aa data final.");
-        
+
         double extras = 0;
         for (CartaoDePonto cartao : ((EmpregadoHorista) emp).getCartoes()) {
             if (isDataNoIntervalo(cartao.getData(), inicio, fim)) {
@@ -387,13 +569,14 @@ public class Facade {
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
         if (!(emp instanceof EmpregadoComissionado)) throw new Exception("Empregado nao eh comissionado.");
-        
+
         parseData(data, "Data invalida.");
         double valorVal = Double.parseDouble(valor.replace(",", "."));
-        if (valorVal <= 0) throw new Exception("Valor deve ser positivo."); 
-        
+        if (valorVal <= 0) throw new Exception("Valor deve ser positivo.");
+
         salvarEstado();
         ((EmpregadoComissionado) emp).addVenda(new ResultadoVenda(data, valorVal));
+        persistirEstado();
     }
 
     public String getVendasRealizadas(String empId, String dataInicial, String dataFinal) throws Exception {
@@ -401,11 +584,11 @@ public class Facade {
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
         if (!(emp instanceof EmpregadoComissionado)) throw new Exception("Empregado nao eh comissionado.");
-        
+
         LocalDate inicio = parseData(dataInicial, "Data inicial invalida.");
         LocalDate fim = parseData(dataFinal, "Data final invalida.");
         if (inicio.isAfter(fim)) throw new Exception("Data inicial nao pode ser posterior aa data final.");
-        
+
         double total = 0;
         for (ResultadoVenda venda : ((EmpregadoComissionado) emp).getVendas()) {
             if (isDataNoIntervalo(venda.getData(), inicio, fim)) {
@@ -415,7 +598,7 @@ public class Facade {
         return formatarValor(String.valueOf(total));
     }
 
-    // --- US 5: Taxas de Serviço ---
+    // --- US 5: Taxas de Servico ---
     public void lancaTaxaServico(String membroId, String data, String valor) throws Exception {
         if (membroId == null || membroId.isEmpty()) throw new Exception("Identificacao do membro nao pode ser nula.");
         Empregado emp = null;
@@ -426,13 +609,14 @@ public class Facade {
             }
         }
         if (emp == null) throw new Exception("Membro nao existe.");
-        
+
         parseData(data, "Data invalida.");
         double valorVal = Double.parseDouble(valor.replace(",", "."));
         if (valorVal <= 0) throw new Exception("Valor deve ser positivo.");
-        
+
         salvarEstado();
         emp.addTaxaServico(new TaxaServico(data, valorVal));
+        persistirEstado();
     }
 
     public String getTaxasServico(String empId, String dataInicial, String dataFinal) throws Exception {
@@ -440,11 +624,11 @@ public class Facade {
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
         if (!emp.isSindicalizado()) throw new Exception("Empregado nao eh sindicalizado.");
-        
+
         LocalDate inicio = parseData(dataInicial, "Data inicial invalida.");
         LocalDate fim = parseData(dataFinal, "Data final invalida.");
         if (inicio.isAfter(fim)) throw new Exception("Data inicial nao pode ser posterior aa data final.");
-        
+
         double total = 0;
         for (TaxaServico taxa : emp.getTaxasServico()) {
             if (isDataNoIntervalo(taxa.getData(), inicio, fim)) {
@@ -502,6 +686,7 @@ public class Facade {
         } else {
             throw new Exception("Atributo nao existe.");
         }
+        persistirEstado();
     }
 
     public void alteraEmpregado(String empId, String atributo, String valor, String ext) throws Exception {
@@ -528,33 +713,36 @@ public class Facade {
         } else {
             throw new Exception("Atributo nao existe.");
         }
+        persistirEstado();
     }
 
     public void alteraEmpregado(String empId, String atributo, String valor, String idSindicato, String taxaSindical) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
-        
+
         if (atributo.equals("sindicalizado") && valor.equals("true")) {
             if (idSindicato == null || idSindicato.isEmpty()) throw new Exception("Identificacao do sindicato nao pode ser nula.");
             if (taxaSindical == null || taxaSindical.isEmpty()) throw new Exception("Taxa sindical nao pode ser nula.");
+            double taxa;
             try {
-                double taxa = Double.parseDouble(taxaSindical.replace(",", "."));
-                if (taxa < 0) throw new Exception("Taxa sindical deve ser nao-negativa.");
+                taxa = Double.parseDouble(taxaSindical.replace(",", "."));
             } catch (NumberFormatException e) {
                 throw new Exception("Taxa sindical deve ser numerica.");
             }
-            
+            if (taxa < 0) throw new Exception("Taxa sindical deve ser nao-negativa.");
+
             for (Empregado e : empregados.values()) {
                 if (idSindicato.equals(e.getIdSindicato()) && !e.getId().equals(empId)) {
                     throw new Exception("Ha outro empregado com esta identificacao de sindicato");
                 }
             }
-            
+
             salvarEstado();
             Empregado emp = empregados.get(empId);
             emp.setSindicalizado(true);
             emp.setIdSindicato(idSindicato);
-            emp.setTaxaSindical(Double.parseDouble(taxaSindical.replace(",", ".")));
+            emp.setTaxaSindical(taxa);
+            persistirEstado();
         }
     }
 
@@ -562,7 +750,7 @@ public class Facade {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
         Empregado emp = empregados.get(empId);
-        
+
         if (atributo.equals("metodoPagamento") && valor.equals("banco")) {
             if (banco == null || banco.isEmpty()) throw new Exception("Banco nao pode ser nulo.");
             if (agencia == null || agencia.isEmpty()) throw new Exception("Agencia nao pode ser nulo.");
@@ -573,6 +761,7 @@ public class Facade {
             emp.setBanco(banco);
             emp.setAgencia(agencia);
             emp.setContaCorrente(contaCorrente);
+            persistirEstado();
         }
     }
 }
