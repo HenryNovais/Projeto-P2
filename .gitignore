@@ -1,0 +1,16 @@
+# Persistencia gerada em runtime (nunca deve ir pro repo)
+wepayu.dat
+
+# Classes compiladas
+out/
+bin/
+*.class
+
+# Relatorios gerados pelos testes (rodaFolha) na raiz do projeto
+# -- os de dentro de ok/ (gabarito do professor) NAO sao afetados por isso
+/folha-*.txt
+
+# IDE
+.vscode/
+.idea/
+*.iml
