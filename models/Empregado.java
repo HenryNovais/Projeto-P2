@@ -23,10 +23,10 @@ public abstract class Empregado implements Serializable {
     // historico consultavel (getHorasTrabalhadas, getVendasRealizadas, ...)
     // e o undo/redo consistentes.
     private LocalDate dataUltimoPagamento;
-    // Data de contratacao (regra simplificada do enunciado, ja que ainda
-    // nao existe um comando para informa-la): horista = data do primeiro
+    // Data de contratacao (regra simplificada, ja que ainda nao existe um
+    // comando para informa-la): horista = data do primeiro
     // cartao lancado; assalariado/comissionado = 1/1/2005, atribuido pela
-    // Facade na criacao.
+    // Facade na criacao
     private LocalDate dataContratacao;
 
     public LocalDate getDataUltimoPagamento() { return dataUltimoPagamento; }

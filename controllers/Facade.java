@@ -132,7 +132,8 @@ public class Facade {
             double salario = Double.parseDouble(c.getSalario().replace(",", "."));
             double pct = Double.parseDouble(c.getComissao().replace(",", "."));
             // ano tem 52 semanas / 26 quinzenas => base por quinzena = salario*12/52*2
-            // truncado (nao arredondado) a centavos, como o gabarito do professor faz
+            // truncado (nao arredondado) a centavos, para bater com o valor
+            // esperado no relatorio (ex.: 1500*24/52 = 692,3076... -> 692,30)
             fixo = truncar(salario * 24.0 / 52.0);
             for (ResultadoVenda v : c.getVendas()) {
                 LocalDate d = parseDataSilencioso(v.getData());
@@ -197,12 +198,11 @@ public class Facade {
                 }
             }
         }
-        // "horista nao pode ter contracheque negativo" (Obs. 1 do enunciado).
-        // OBS: o enunciado tambem fala em transportar o debito de sindicato
-        // nao pago para o proximo contracheque quando o bruto nao cobre o
-        // desconto -- isso NAO esta implementado aqui porque o proprio
-        // enunciado diz que isso "nao esta testado" neste milestone. Se cair
-        // em teste extra, precisa ser revisto.
+        // Regra de negocio: horista nao pode ter contracheque negativo.
+        // OBS: ainda falta implementar o transporte do debito sindical nao
+        // coberto para o proximo contracheque (quando o bruto nao cobre o
+        // desconto) -- caso apareca em algum teste que envolva isso, precisa
+        // ser revisto.
         double liquido = Math.max(0, bruto - descontos);
 
         if (aplicarPagamento && pagamentoReal) {
@@ -345,9 +345,8 @@ public class Facade {
         return String.format(java.util.Locale.US, "%.2f", num).replace(".", ",");
     }
 
-    // Trunca (nao arredonda) para 2 casas decimais -- o gabarito do
-    // professor usa truncamento no calculo do salario fixo/comissao do
-    // comissionado (ex.: 1500*24/52 = 692,3076... vira 692,30, nao 692,31).
+    // Trunca (nao arredonda) para 2 casas decimais -- usado no calculo do
+    // salario fixo/comissao do comissionado, onde a divisao gera dizima.
     private double truncar(double valor) {
         return Math.floor(valor * 100 + 1e-9) / 100.0;
     }
@@ -431,7 +430,7 @@ public class Facade {
         return id;
     }
 
-    // Regra simplificada do enunciado para US7: como ainda nao existe um
+    // Regra simplificada para o calculo da folha: como ainda nao existe um
     // parametro de data de contratacao, assalariados e comissionados sao
     // sempre considerados contratados em 1/1/2005.
     private static final LocalDate DATA_CONTRATACAO_PADRAO = LocalDate.of(2005, 1, 1);

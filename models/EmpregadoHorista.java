@@ -2,6 +2,13 @@ package models;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Empregado pago por hora trabalhada, com base num salario por hora
+ * (salarioPorHora) e numa lista de cartoes de ponto batidos ao longo do
+ * tempo. E o unico tipo de empregado cuja folha de pagamento pode dar
+ * zero num periodo (quando nao ha cartao lancado), diferente do
+ * assalariado e do comissionado, que sempre recebem um valor fixo.
+ */
 public class EmpregadoHorista extends Empregado{
     private String salarioPorHora;
     private List<CartaoDePonto> cartoes;

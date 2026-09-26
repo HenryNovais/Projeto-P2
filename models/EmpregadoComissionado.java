@@ -2,6 +2,13 @@ package models;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Empregado assalariado que tambem recebe comissao sobre vendas (por isso
+ * estende EmpregadoAssalariado em vez de Empregado diretamente -- ver
+ * comentario em EmpregadoAssalariado). Guarda o percentual de comissao e
+ * a lista de vendas realizadas, usada para calcular a parte variavel do
+ * salario na folha de pagamento.
+ */
 public class EmpregadoComissionado extends EmpregadoAssalariado{
     private String comissao;
     private List<ResultadoVenda> vendas;
