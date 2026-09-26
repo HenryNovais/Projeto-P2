@@ -26,13 +26,8 @@ public abstract class Empregado implements Serializable {
     // Data de contratacao (regra simplificada, ja que ainda nao existe um
     // comando para informa-la): horista = data do primeiro
     // cartao lancado; assalariado/comissionado = 1/1/2005, atribuido pela
-    // Facade na criacao
+    // Facade na criacao.
     private LocalDate dataContratacao;
-
-    public LocalDate getDataUltimoPagamento() { return dataUltimoPagamento; }
-    public void setDataUltimoPagamento(LocalDate data) { this.dataUltimoPagamento = data; }
-    public LocalDate getDataContratacao() { return dataContratacao; }
-    public void setDataContratacao(LocalDate data) { this.dataContratacao = data; }
 
     public Empregado(String id, String nome, String endereco, String tipo) {
         this.id = id; this.nome = nome; this.endereco = endereco; this.tipo = tipo;
@@ -66,6 +61,65 @@ public abstract class Empregado implements Serializable {
     public String getContaCorrente() { return contaCorrente; }
     public void setContaCorrente(String contaCorrente) { this.contaCorrente = contaCorrente; }
 
+    public LocalDate getDataUltimoPagamento() { return dataUltimoPagamento; }
+    public void setDataUltimoPagamento(LocalDate data) { this.dataUltimoPagamento = data; }
+    public LocalDate getDataContratacao() { return dataContratacao; }
+    public void setDataContratacao(LocalDate data) { this.dataContratacao = data; }
+
     public abstract String getSalario();
     public abstract void setSalario(String salario);
+
+ 
+
+    /** Este empregado deve ser pago na data informada? (regra de agenda de cada tipo) */
+    public abstract boolean devePagar(LocalDate data);
+
+    /** Calcula o salario bruto (e detalhes: horas/vendas/comissao/fixo) deste
+     *  empregado no periodo que termina em dataPagamento. */
+    public abstract DadosPagamento calcularBruto(LocalDate dataPagamento);
+
+    /** Quantos dias contam para a taxa sindical deste pagamento (a duracao
+     *  do "periodo" e diferente pra cada tipo de agenda). */
+    public abstract int diasParaTaxaSindical(LocalDate dataPagamento);
+
+    /** Secao do relatorio de folha em que este empregado deve ser listado
+     *  ("HORISTAS", "ASSALARIADOS" ou "COMISSIONADOS"). */
+    public abstract String getCategoriaFolha();
+
+    // Operacoes que so fazem sentido para alguns subtipos (cartao de ponto
+    // e so de horista; venda e comissao sao so de comissionado). Por
+    // padrao todas recusam com a mensagem de erro correta; o subtipo que
+    // realmente suporta a operacao sobrescreve o metodo. Assim o Facade
+    // so chama emp.addCartao(...)/emp.getVendas()/etc. sem precisar saber
+    // (nem checar) o tipo concreto por tras da referencia Empregado.
+    public void addCartao(CartaoDePonto cartao) throws Exception {
+        throw new Exception("Empregado nao eh horista.");
+    }
+    public List<CartaoDePonto> getCartoes() throws Exception {
+        throw new Exception("Empregado nao eh horista.");
+    }
+    public void addVenda(ResultadoVenda venda) throws Exception {
+        throw new Exception("Empregado nao eh comissionado.");
+    }
+    public List<ResultadoVenda> getVendas() throws Exception {
+        throw new Exception("Empregado nao eh comissionado.");
+    }
+    public String getComissao() throws Exception {
+        throw new Exception("Empregado nao eh comissionado.");
+    }
+    public void setComissao(String comissao) throws Exception {
+        throw new Exception("Empregado nao eh comissionado.");
+    }
+
+    // Helpers de calculo compartilhados por quem precisar (Horista e
+    // Comissionado), evitando duplicar parsing/arredondamento em cada um.
+    protected static double parseValor(String valor) {
+        return Double.parseDouble(valor.replace(",", "."));
+    }
+
+    // Trunca (nao arredonda) para 2 casas decimais, usado no calculo do
+    // salario fixo/comissao do comissionado, onde a divisao gera dizima.
+    protected static double truncar(double valor) {
+        return Math.floor(valor * 100 + 1e-9) / 100.0;
+    }
 }
