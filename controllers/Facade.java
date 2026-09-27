@@ -20,6 +20,9 @@ public class Facade {
         carregarEstado();
     }
 
+    // ==================================================================
+    // Persistencia em disco, sobrevive a novas instancias do Facade
+    // ==================================================================
     @SuppressWarnings("unchecked")
     private void carregarEstado() {
         File arquivo = new File(ARQUIVO_DADOS);
@@ -30,7 +33,7 @@ public class Facade {
                 this.nextId = (int) estado[1];
                 return;
             } catch (Exception e) {
-                // arquivo corrompido/incompativel: comeca vazio
+                // arquivo corrompido ou incompativel, entao comeca vazio
             }
         }
         this.empregados = new LinkedHashMap<>();
@@ -41,7 +44,7 @@ public class Facade {
         try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(ARQUIVO_DADOS))) {
             oos.writeObject(new Object[] { this.empregados, this.nextId });
         } catch (IOException e) {
-            // nao interrompe o fluxo; idealmente logar
+            // nao interrompe o fluxo: idealmente logar
         }
     }
 
@@ -57,7 +60,7 @@ public class Facade {
         this.sistemaEncerrado = true;
     }
 
-    // --- UNDO / REDO ---
+    // Undo e redo
     private void salvarEstado() {
         urManager.saveState(new Object[] { this.empregados, this.nextId });
     }
@@ -85,15 +88,14 @@ public class Facade {
     }
 
     // ==================================================================
-    // US 7: REGRAS DE FOLHA DE PAGAMENTO
-    
-    // quem sabe se e dia de pagar (emp.devePagar), quanto e o bruto (emp.calcularBruto) e por
-    // quantos dias cobrar taxa sindical (emp.diasParaTaxaSindical) e o
-    // proprio Empregado: cada subtipo (Horista/Assalariado/Comissionado)
-    // sabe responder por si mesmo. O Facade so orquestra.
+    // US 7, regras de folha de pagamento
+    //
+    // Cada tipo de empregado sabe se e dia de pagar, sabe calcular o
+    // proprio salario bruto e sabe por quantos dias cobrar taxa sindical.
+    // O Facade so pergunta pro proprio empregado e usa a resposta.
     // ==================================================================
 
-    // Indices do array de retorno de calcularPagamento:
+    // Indices do array de retorno de calcularPagamento
     private static final int I_BRUTO = 0, I_DESCONTOS = 1, I_LIQUIDO = 2,
             I_FIXO = 3, I_VENDAS = 4, I_COMISSAO = 5, I_H_NORMAIS = 6, I_H_EXTRAS = 7;
 
@@ -102,10 +104,11 @@ public class Facade {
     private double[] calcularPagamento(Empregado emp, LocalDate dataPagamento, boolean aplicarPagamento) {
         DadosPagamento dp = emp.calcularBruto(dataPagamento);
 
-        // So existe um "evento de pagamento" de verdade se ha algo a pagar.
-        // Assalariado/comissionado sempre tem (salario fixo garante bruto>0).
-        // Horista pode nao ter (nenhum cartao lancado no periodo): nesse
-        // caso ele aparece no relatorio com tudo zerado, mas NAO e "pago".
+        // So existe um evento de pagamento de verdade se ha algo a pagar.
+        // Assalariado e comissionado sempre tem, ja que o salario fixo
+        // garante bruto maior que zero. O horista pode nao ter quando
+        // nenhum cartao foi lancado no periodo, e nesse caso ele aparece
+        // no relatorio com tudo zerado, mas nao chega a ser pago.
         boolean pagamentoReal = dp.bruto > 0;
 
         double descontos = 0;
@@ -119,7 +122,7 @@ public class Facade {
                 }
             }
         }
-        // Regra de negocio: horista nao pode ter contracheque negativo.
+        // O contracheque nunca pode ficar negativo.
         double liquido = Math.max(0, dp.bruto - descontos);
 
         if (aplicarPagamento && pagamentoReal) {
@@ -182,7 +185,7 @@ public class Facade {
         sb.append("FOLHA DE PAGAMENTO DO DIA ").append(d.toString()).append(NL);
         sb.append("====================================").append(NL).append(NL);
 
-        // ---------- HORISTAS ----------
+        // Horistas
         sb.append("===============================================================================================================================").append(NL);
         sb.append("===================== HORISTAS ================================================================================================").append(NL);
         sb.append("===============================================================================================================================").append(NL);
@@ -204,7 +207,7 @@ public class Facade {
                 formatarValor(String.valueOf(totHBruto)), formatarValor(String.valueOf(totHDesc)),
                 formatarValor(String.valueOf(totHLiq)))).append(NL).append(NL);
 
-        // ---------- ASSALARIADOS ----------
+        // Assalariados
         sb.append("===============================================================================================================================").append(NL);
         sb.append("===================== ASSALARIADOS ============================================================================================").append(NL);
         sb.append("===============================================================================================================================").append(NL);
@@ -223,7 +226,7 @@ public class Facade {
                 "TOTAL ASSALARIADOS", formatarValor(String.valueOf(totABruto)), formatarValor(String.valueOf(totADesc)),
                 formatarValor(String.valueOf(totALiq)))).append(NL).append(NL);
 
-        // ---------- COMISSIONADOS ----------
+        // Comissionados
         sb.append("===============================================================================================================================").append(NL);
         sb.append("===================== COMISSIONADOS ===========================================================================================").append(NL);
         sb.append("===============================================================================================================================").append(NL);
@@ -258,9 +261,9 @@ public class Facade {
         persistirEstado();
     }
 
-    // =================================
-    // METODOS AUXILIARES E VALIDACOES
-    // =================================
+    // ==================================================================
+    // Metodos auxiliares e validacoes
+    // ==================================================================
     private String formatarValor(String valor) {
         double num = Double.parseDouble(valor.replace(",", "."));
         return String.format(java.util.Locale.US, "%.2f", num).replace(".", ",");
@@ -320,12 +323,12 @@ public class Facade {
         novo.setDataContratacao(velho.getDataContratacao());
     }
 
-    // Regra simplificada para o calculo da folha: como ainda nao existe um
+    // Regra simplificada para o calculo da folha. Como ainda nao existe um
     // parametro de data de contratacao, assalariados e comissionados sao
     // sempre considerados contratados em 1/1/2005.
     private static final LocalDate DATA_CONTRATACAO_PADRAO = LocalDate.of(2005, 1, 1);
 
-    // --- US 1: Criacao de Empregados ---
+    // US 1: criacao de empregados
     public String criarEmpregado(String nome, String endereco, String tipo, String salario) throws Exception {
         validarDadosIniciais(nome, endereco);
         if (tipo.equals("comissionado")) throw new Exception("Tipo nao aplicavel.");
@@ -374,8 +377,8 @@ public class Facade {
         if (atributo.equals("sindicalizado")) return String.valueOf(emp.isSindicalizado());
         if (atributo.equals("metodoPagamento")) return emp.getMetodoPagamento();
 
-        // emp.getComissao() ja lanca "Empregado nao eh comissionado." por
-        // padrao (ver Empregado) se o empregado nao for EmpregadoComissionado.
+        // Se o empregado nao for comissionado, emp.getComissao() ja lanca
+        // sozinho a excecao "Empregado nao eh comissionado."
         if (atributo.equals("comissao")) {
             return emp.getComissao();
         }
@@ -395,7 +398,7 @@ public class Facade {
         throw new Exception("Atributo nao existe.");
     }
 
-    // --- US 2: Remocao e Busca ---
+    // US 2: remocao e busca
     public void removerEmpregado(String empId) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
@@ -415,7 +418,7 @@ public class Facade {
         throw new Exception("Nao ha empregado com esse nome.");
     }
 
-    // --- US 3: Cartao de Ponto ---
+    // US 3: cartao de ponto
     public void lancaCartao(String empId, String data, String horas) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
@@ -426,9 +429,9 @@ public class Facade {
         if (horasVal <= 0) throw new Exception("Horas devem ser positivas.");
 
         salvarEstado();
-        // emp.addCartao ja lanca "Empregado nao eh horista." por padrao se
-        // nao for EmpregadoHorista; e o proprio EmpregadoHorista que cuida
-        // de registrar a data de contratacao no primeiro cartao lancado.
+        // Se o empregado nao for horista, emp.addCartao() ja lanca sozinho
+        // a excecao "Empregado nao eh horista." O proprio EmpregadoHorista
+        // cuida de registrar a data de contratacao no primeiro cartao lancado.
         emp.addCartao(new CartaoDePonto(data, horasVal));
         persistirEstado();
     }
@@ -471,7 +474,7 @@ public class Facade {
         return formatarHoras(extras);
     }
 
-    // --- US 4: Vendas ---
+    // US 4: vendas
     public void lancaVenda(String empId, String data, String valor) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
@@ -504,7 +507,7 @@ public class Facade {
         return formatarValor(String.valueOf(total));
     }
 
-    // --- US 5: Taxas de Servico ---
+    // US 5, taxas de servico
     public void lancaTaxaServico(String membroId, String data, String valor) throws Exception {
         if (membroId == null || membroId.isEmpty()) throw new Exception("Identificacao do membro nao pode ser nula.");
         Empregado emp = null;
@@ -544,7 +547,7 @@ public class Facade {
         return formatarValor(String.valueOf(total));
     }
 
-    // --- US 6: Alterar Detalhes do Empregado ---
+    // US 6: alterar detalhes do empregado
     public void alteraEmpregado(String empId, String atributo, String valor) throws Exception {
         if (empId == null || empId.isEmpty()) throw new Exception("Identificacao do empregado nao pode ser nula.");
         if (!empregados.containsKey(empId)) throw new Exception("Empregado nao existe.");
