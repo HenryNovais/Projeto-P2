@@ -1,17 +1,13 @@
 package models;
+
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Empregado pago por hora trabalhada, com base num salario por hora
- * (salarioPorHora) e numa lista de cartoes de ponto batidos ao longo do
- * tempo. E o unico tipo de empregado cuja folha de pagamento pode dar
- * zero num periodo (quando nao ha cartao lancado), diferente do
- * assalariado e do comissionado, que sempre recebem um valor fixo.
- */
+/** Empregado cuja remuneracao resulta dos cartoes de ponto. */
 public class EmpregadoHorista extends Empregado {
+    private static final long serialVersionUID = -4210639985962258050L;
     private String salarioPorHora;
     private List<CartaoDePonto> cartoes;
 
@@ -28,7 +24,6 @@ public class EmpregadoHorista extends Empregado {
 
     @Override
     public void addCartao(CartaoDePonto cartao) {
-        // "empregados horistas sao contratados no primeiro dia em que lancarem um cartao"
         if (getDataContratacao() == null) {
             setDataContratacao(cartao.getDataComoLocalDate());
         }
@@ -39,24 +34,14 @@ public class EmpregadoHorista extends Empregado {
     public List<CartaoDePonto> getCartoes() { return this.cartoes; }
 
     @Override
-    public boolean devePagar(LocalDate data) {
-        return data.getDayOfWeek().getValue() == 5; // sexta-feira
-    }
-
-    @Override
     public int diasParaTaxaSindical(LocalDate dataPagamento) {
-        // Horista pode "pular" semanas sem cartao (calcularBruto da bruto=0
-        // nelas, entao o Facade nao efetiva pagamento). Quando finalmente
-        // ha um pagamento real de novo, a taxa sindical das semanas
-        // puladas tem que ser cobrada junto, por isso usamos dias
-        // corridos desde o ultimo pagamento REAL (nao um valor fixo de 7),
-        // com fallback pra data de contratacao (+1, pois o dia da
-        // contratacao conta) na primeira vez que ele e pago.
         LocalDate desde = getDataUltimoPagamento();
-        long dias = (desde != null)
-                ? ChronoUnit.DAYS.between(desde, dataPagamento)
-                : ChronoUnit.DAYS.between(getDataContratacao(), dataPagamento) + 1;
-        return (int) dias;
+        LocalDate contratacao = getDataContratacao();
+        if (desde != null) {
+            return (int) ChronoUnit.DAYS.between(desde, dataPagamento);
+        }
+        if (contratacao == null) return 0;
+        return (int) ChronoUnit.DAYS.between(contratacao, dataPagamento) + 1;
     }
 
     @Override
@@ -65,12 +50,14 @@ public class EmpregadoHorista extends Empregado {
     @Override
     public DadosPagamento calcularBruto(LocalDate dataPagamento) {
         LocalDate desde = getDataUltimoPagamento();
+        LocalDate limiteAgenda = getAgendaPagamento().inicioPeriodo(dataPagamento);
+        if (desde == null || desde.isBefore(limiteAgenda)) desde = limiteAgenda;
         double taxa = parseValor(getSalario());
         double horasNormais = 0, horasExtras = 0, bruto = 0;
         for (CartaoDePonto card : cartoes) {
             LocalDate d = card.getDataComoLocalDate();
-            boolean dentroDoPeriodo = (desde == null || d.isAfter(desde)) && !d.isAfter(dataPagamento);
-            if (dentroDoPeriodo) {
+            boolean dentro = (desde == null || d.isAfter(desde)) && !d.isAfter(dataPagamento);
+            if (dentro) {
                 double horas = card.getHoras();
                 double normais = Math.min(horas, 8);
                 double extras = Math.max(0, horas - 8);

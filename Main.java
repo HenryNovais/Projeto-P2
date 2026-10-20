@@ -8,7 +8,7 @@ public class Main {
         // Executa o EasyAccept passando o caminho e o script de teste específico
         EasyAccept.main(new String[]{
             facade,
-            "tests/us7.txt"
+            "tests/us9.txt"
         });
     }
 }

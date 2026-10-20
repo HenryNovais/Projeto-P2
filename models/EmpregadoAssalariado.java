@@ -1,14 +1,10 @@
 package models;
+
 import java.time.LocalDate;
 
-/**
- * Empregado com salario fixo mensal, pago no ultimo dia util do mes.
- * EmpregadoComissionado herda desta classe porque um comissionado tambem
- * tem um salario mensal fixo como base, ele so soma comissao de vendas
- * em cima disso, entao reaproveitar o campo salarioMensal evita
- * duplicar essa parte da modelagem.
- */
+/** Empregado que recebe uma parcela fixa do salario anual por agenda. */
 public class EmpregadoAssalariado extends Empregado {
+    private static final long serialVersionUID = -7494194105892041507L;
     protected String salarioMensal;
 
     public EmpregadoAssalariado(String id, String nome, String endereco, String salarioMensal) {
@@ -17,32 +13,20 @@ public class EmpregadoAssalariado extends Empregado {
     }
 
     @Override
-    public String getSalario() { return this.salarioMensal; }
+    public String getSalario() { return salarioMensal; }
     @Override
     public void setSalario(String salario) { this.salarioMensal = salario; }
 
-    @Override
-    public boolean devePagar(LocalDate data) {
-        return isUltimoDiaUtil(data);
-    }
-
-    private boolean isUltimoDiaUtil(LocalDate data) {
-        LocalDate ultimo = data.withDayOfMonth(data.lengthOfMonth());
-        while (ultimo.getDayOfWeek().getValue() >= 6) { // sabado=6, domingo=7
-            ultimo = ultimo.minusDays(1);
-        }
-        return data.equals(ultimo);
+    /** Reutilizado pelos assalariados e pelos comissionados. */
+    protected double calcularSalarioFixo() {
+        double salario = parseValor(getSalario());
+        if (getAgendaPagamento() == AgendaPagamento.MENSAL) return salario;
+        return truncar(salario * getAgendaPagamento().fatorSalarioMensal());
     }
 
     @Override
     public int diasParaTaxaSindical(LocalDate dataPagamento) {
-        // Assalariado nunca "pula" pagamento (bruto sempre > 0, e' o
-        // salario fixo), entao usamos a duracao real do mes. Isso tambem
-        // garante que rodar a folha duas vezes na MESMA data da o mesmo
-        // resultado, uma formula baseada em "dias desde o ultimo
-        // pagamento" zeraria o desconto na segunda chamada, ja que a data
-        // do ultimo pagamento passaria a ser igual a data atual.
-        return dataPagamento.lengthOfMonth();
+        return getAgendaPagamento().diasParaTaxaSindical(dataPagamento);
     }
 
     @Override
@@ -50,7 +34,6 @@ public class EmpregadoAssalariado extends Empregado {
 
     @Override
     public DadosPagamento calcularBruto(LocalDate dataPagamento) {
-        double bruto = parseValor(getSalario());
-        return new DadosPagamento(bruto, 0, 0, 0, 0, 0);
+        return new DadosPagamento(calcularSalarioFixo(), 0, 0, 0, 0, 0);
     }
 }
