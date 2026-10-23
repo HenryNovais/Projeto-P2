@@ -10,6 +10,7 @@ public class Facade {
     private static final String ARQUIVO_DADOS = "wepayu.dat";
 
     private Map<String, Empregado> empregados;
+    private CatalogoAgendas catalogoAgendas;
     private int nextId;
     private UndoRedoManager urManager;
     private boolean sistemaEncerrado;
@@ -29,6 +30,9 @@ public class Facade {
                 Object[] estado = (Object[]) ois.readObject();
                 this.empregados = (Map<String, Empregado>) estado[0];
                 this.nextId = (int) estado[1];
+                // O estado antigo da US 9 tinha somente empregados e nextId.
+                this.catalogoAgendas = estado.length >= 3
+                        ? (CatalogoAgendas) estado[2] : new CatalogoAgendas();
                 return;
             } catch (Exception e) {
                 // Nao mascarar falhas de persistencia, para nao perder dados.
@@ -37,11 +41,12 @@ public class Facade {
         }
         this.empregados = new LinkedHashMap<>();
         this.nextId = 1;
+        this.catalogoAgendas = new CatalogoAgendas();
     }
 
     private void persistirEstado() {
         try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(ARQUIVO_DADOS))) {
-            oos.writeObject(new Object[] { this.empregados, this.nextId });
+            oos.writeObject(new Object[] { this.empregados, this.nextId, this.catalogoAgendas });
         } catch (IOException e) {
             throw new IllegalStateException("Falha ao salvar dados persistidos em " + ARQUIVO_DADOS, e);
         }
@@ -51,6 +56,7 @@ public class Facade {
         salvarEstado();
         this.empregados = new LinkedHashMap<>();
         this.nextId = 1;
+        this.catalogoAgendas = new CatalogoAgendas();
         this.sistemaEncerrado = false;
         persistirEstado();
     }
@@ -61,24 +67,38 @@ public class Facade {
 
     // Undo e redo
     private void salvarEstado() {
-        urManager.saveState(new Object[] { this.empregados, this.nextId });
+        urManager.saveState(new Object[] { this.empregados, this.nextId, this.catalogoAgendas });
     }
 
     @SuppressWarnings("unchecked")
     public void undo() throws Exception {
         if (sistemaEncerrado) throw new Exception("Nao pode dar comandos depois de encerrarSistema.");
-        Object[] estadoAnterior = (Object[]) urManager.undo(new Object[] { this.empregados, this.nextId });
+        Object[] estadoAnterior = (Object[]) urManager.undo(new Object[] { this.empregados, this.nextId, this.catalogoAgendas });
         this.empregados = (Map<String, Empregado>) estadoAnterior[0];
         this.nextId = (int) estadoAnterior[1];
+        this.catalogoAgendas = (CatalogoAgendas) estadoAnterior[2];
         persistirEstado();
     }
 
     @SuppressWarnings("unchecked")
     public void redo() throws Exception {
         if (sistemaEncerrado) throw new Exception("Nao pode dar comandos depois de encerrarSistema.");
-        Object[] estadoRefeito = (Object[]) urManager.redo(new Object[] { this.empregados, this.nextId });
+        Object[] estadoRefeito = (Object[]) urManager.redo(new Object[] { this.empregados, this.nextId, this.catalogoAgendas });
         this.empregados = (Map<String, Empregado>) estadoRefeito[0];
         this.nextId = (int) estadoRefeito[1];
+        this.catalogoAgendas = (CatalogoAgendas) estadoRefeito[2];
+        persistirEstado();
+    }
+
+    /** US 10: cadastra uma nova agenda e persiste o catalogo atualizado. */
+    public void criarAgendaDePagamentos(String descricao) throws Exception {
+        // Valida antes de guardar o snapshot, para nao adicionar comando invalido ao undo.
+        AgendaConfigurada agenda = AgendaConfigurada.porDescricao(descricao);
+        if (catalogoAgendas.listar().contains(agenda.getDescricao())) {
+            throw new AgendaPagamentoJaExisteException();
+        }
+        salvarEstado();
+        catalogoAgendas.criar(agenda.getDescricao());
         persistirEstado();
     }
 
@@ -294,7 +314,7 @@ public class Facade {
         novo.setTaxaSindical(velho.getTaxaSindical());
         novo.setDataUltimoPagamento(velho.getDataUltimoPagamento());
         novo.setDataContratacao(velho.getDataContratacao());
-        novo.setAgendaPagamento(velho.getAgendaPagamento());
+        novo.setDescricaoAgendaPagamento(velho.getDescricaoAgendaPagamento());
     }
 
     private static final LocalDate DATA_CONTRATACAO_PADRAO = LocalDate.of(2005, 1, 1);
@@ -346,7 +366,7 @@ public class Facade {
         if (atributo.equals("salario")) return emp.getSalario();
         if (atributo.equals("sindicalizado")) return String.valueOf(emp.isSindicalizado());
         if (atributo.equals("metodoPagamento")) return emp.getMetodoPagamento();
-        if (atributo.equals("agendaPagamento")) return emp.getAgendaPagamento().getDescricao();
+        if (atributo.equals("agendaPagamento")) return emp.getDescricaoAgendaPagamento();
         if (atributo.equals("comissao")) return emp.getComissao();
 
         if (atributo.equals("banco") || atributo.equals("agencia") || atributo.equals("contaCorrente")) {
@@ -525,9 +545,9 @@ public class Facade {
             salvarEstado();
             emp.setEndereco(valor);
         } else if (atributo.equals("agendaPagamento")) {
-            AgendaPagamento novaAgenda = AgendaPagamento.porDescricao(valor);
+            String novaAgenda = catalogoAgendas.exigirDisponivel(valor);
             salvarEstado();
-            emp.setAgendaPagamento(novaAgenda);
+            emp.setDescricaoAgendaPagamento(novaAgenda);
         } else if (atributo.equals("metodoPagamento")) {
             if (!valor.equals("correios") && !valor.equals("emMaos") && !valor.equals("banco")) throw new Exception("Metodo de pagamento invalido.");
             salvarEstado();

@@ -24,6 +24,8 @@ public abstract class Empregado implements Serializable {
     private LocalDate dataUltimoPagamento;
     private LocalDate dataContratacao;
     private AgendaPagamento agendaPagamento;
+    // Mantem a enum antiga para carregar os arquivos da US 9 sem incompatibilidade.
+    private String agendaPersonalizada;
 
     protected Empregado(String id, String nome, String endereco, String tipo) {
         this.id = id;
@@ -76,11 +78,33 @@ public abstract class Empregado implements Serializable {
 
     public void setAgendaPagamento(AgendaPagamento agenda) {
         this.agendaPagamento = Objects.requireNonNull(agenda, "Agenda de pagamento obrigatoria");
+        this.agendaPersonalizada = null;
+    }
+
+    /** Agenda legada ou agenda personalizada, ambas acessiveis pelo mesmo contrato. */
+    public String getDescricaoAgendaPagamento() {
+        return agendaPersonalizada != null ? agendaPersonalizada : getAgendaPagamento().getDescricao();
+    }
+
+    /** Recebe apenas uma descricao previamente aprovada pelo CatalogoAgendas. */
+    public void setDescricaoAgendaPagamento(String descricao) {
+        AgendaConfigurada agenda = AgendaConfigurada.porDescricao(descricao);
+        if (AgendaPagamento.SEMANAL.getDescricao().equals(descricao) ||
+            AgendaPagamento.QUINZENAL.getDescricao().equals(descricao) ||
+            AgendaPagamento.MENSAL.getDescricao().equals(descricao)) {
+            setAgendaPagamento(AgendaPagamento.porDescricao(descricao));
+        } else {
+            this.agendaPersonalizada = agenda.getDescricao();
+        }
+    }
+
+    public AgendaConfigurada getAgendaConfigurada() {
+        return AgendaConfigurada.porDescricao(getDescricaoAgendaPagamento());
     }
 
     public abstract String getSalario();
     public abstract void setSalario(String salario);
-    public boolean devePagar(LocalDate data) { return getAgendaPagamento().devePagar(data); }
+    public boolean devePagar(LocalDate data) { return getAgendaConfigurada().devePagar(data); }
     public abstract DadosPagamento calcularBruto(LocalDate dataPagamento);
     public abstract int diasParaTaxaSindical(LocalDate dataPagamento);
     public abstract String getCategoriaFolha();

@@ -20,13 +20,13 @@ public class EmpregadoAssalariado extends Empregado {
     /** Reutilizado pelos assalariados e pelos comissionados. */
     protected double calcularSalarioFixo() {
         double salario = parseValor(getSalario());
-        if (getAgendaPagamento() == AgendaPagamento.MENSAL) return salario;
-        return truncar(salario * getAgendaPagamento().fatorSalarioMensal());
+        if (getAgendaConfigurada().isMensal()) return salario;
+        return truncar(salario * getAgendaConfigurada().fatorSalarioMensal());
     }
 
     @Override
     public int diasParaTaxaSindical(LocalDate dataPagamento) {
-        return getAgendaPagamento().diasParaTaxaSindical(dataPagamento);
+        return getAgendaConfigurada().diasParaTaxaSindical(dataPagamento);
     }
 
     @Override

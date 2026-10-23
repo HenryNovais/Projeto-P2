@@ -50,7 +50,7 @@ public class EmpregadoHorista extends Empregado {
     @Override
     public DadosPagamento calcularBruto(LocalDate dataPagamento) {
         LocalDate desde = getDataUltimoPagamento();
-        LocalDate limiteAgenda = getAgendaPagamento().inicioPeriodo(dataPagamento);
+        LocalDate limiteAgenda = getAgendaConfigurada().inicioPeriodo(dataPagamento);
         if (desde == null || desde.isBefore(limiteAgenda)) desde = limiteAgenda;
         double taxa = parseValor(getSalario());
         double horasNormais = 0, horasExtras = 0, bruto = 0;

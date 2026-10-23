@@ -35,7 +35,7 @@ public class EmpregadoComissionado extends EmpregadoAssalariado {
     @Override
     public DadosPagamento calcularBruto(LocalDate dataPagamento) {
         LocalDate desde = getDataUltimoPagamento();
-        LocalDate limiteAgenda = getAgendaPagamento().inicioPeriodo(dataPagamento);
+        LocalDate limiteAgenda = getAgendaConfigurada().inicioPeriodo(dataPagamento);
         if (desde == null || desde.isBefore(limiteAgenda)) desde = limiteAgenda;
         double fixo = calcularSalarioFixo();
         double vendasPeriodo = 0;
